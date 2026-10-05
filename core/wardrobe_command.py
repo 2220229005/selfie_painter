@@ -10,35 +10,32 @@
 from __future__ import annotations
 
 import logging
+from typing import Any
 
-from src.plugin_system.base.base_command import BaseCommand
 
 logger = logging.getLogger(__name__)
 
 
-class WardrobeCommand(BaseCommand):
-    """/dr wardrobe|衣柜 - 简洁版衣柜控制命令"""
+class WardrobeCommandMixin:
+    """Wardrobe command mixin."""
 
-    command_name: str = "wardrobe_command"
-    command_description: str = "衣柜/穿搭控制：/dr wardrobe|衣柜 <subcommand>"
+    def _extract_user_id(self, user_id: str | None, message: Any, kwargs: dict) -> str | None:
+        """Resolve caller user_id from method args / message."""
+        if user_id:
+            return str(user_id)
+        if message is not None:
+            info = getattr(message, "message_info", None)
+            user_info = getattr(info, "user_info", None) if info else None
+            uid = getattr(user_info, "user_id", None) if user_info else None
+            if uid is not None:
+                return str(uid)
+        return None
 
-    command_pattern: str = (
-        r"(?:.*，说：\s*)?/dr\s+(?P<action>wardrobe|衣柜)"
-        r"(?:\s+(?P<sub>\S+))?"
-        r"(?:\s+(?P<arg>.*))?$"
-    )
-
-    intercept_level: int = 2
-
-    def _check_permission(self) -> bool:
+    def _check_permission(self, user_id: str | None) -> bool:
         """检查管理员权限"""
         try:
             admin_users = self.get_config("components.admin_users", [])
-            user_id = (
-                str(self.message.message_info.user_info.user_id)
-                if self.message and self.message.message_info and self.message.message_info.user_info
-                else None
-            )
+            user_id = str(user_id) if user_id is not None else None
             if user_id is None:
                 return False
 
@@ -52,11 +49,21 @@ class WardrobeCommand(BaseCommand):
             logger.debug("权限检查失败: %s", exc)
             return False
 
-    async def execute(self) -> tuple[bool, str | None, bool]:
+    async def handle_wardrobe(
+        self,
+        stream_id: str = "",
+        user_id: str = "",
+        matched_groups: dict | None = None,
+        message: Any = None,
+        **kwargs: Any,
+    ) -> tuple[bool, str | None, bool]:
         """执行衣柜命令"""
+        matched_groups = matched_groups or {}
+        self._current_stream_id = stream_id
+        self._current_user_id = self._extract_user_id(user_id, message, kwargs)
         try:
-            sub_raw = (self.matched_groups.get("sub") or "").strip()
-            arg_raw = (self.matched_groups.get("arg") or "").strip()
+            sub_raw = (matched_groups.get("sub") or "").strip()
+            arg_raw = (matched_groups.get("arg") or "").strip()
 
             sub = sub_raw.lower() if sub_raw else "help"
 
@@ -70,19 +77,18 @@ class WardrobeCommand(BaseCommand):
 
             # 管理员子命令
             if sub == "wear":
-                if not self._check_permission():
-                    await self.send_text("你无权使用此命令", storage_message=False)
+                if not self._check_permission(self._current_user_id):
+                    await self.ctx.send.text("你无权使用此命令")
                     return False, "没有权限", True
                 return await self._cmd_wear(arg_raw, intercept=True)
 
-            await self.send_text(
+            await self.ctx.send.text(
                 "未知子命令。\n使用：/dr wardrobe help 查看帮助。",
-                storage_message=False,
             )
             return False, f"未知子命令: {sub}", True
         except Exception as exc:
             logger.error("WardrobeCommand execute failed: %r", exc, exc_info=True)
-            await self.send_text(f"衣柜命令执行失败：{str(exc)[:120]}")
+            await self.ctx.send.text(f"衣柜命令执行失败：{str(exc)[:120]}")
             return False, f"命令异常: {str(exc)}", True
 
     async def _cmd_help(self, *, intercept: bool) -> tuple[bool, str | None, bool]:
@@ -102,7 +108,7 @@ class WardrobeCommand(BaseCommand):
             "• 每日穿搭在 wardrobe.daily_outfits 中配置",
             "• 场景换装（睡觉/运动）自动匹配关键词",
         ]
-        await self.send_text("\n".join(lines))
+        await self.ctx.send.text("\n".join(lines))
         return True, "help", intercept
 
     async def _cmd_list(self, *, intercept: bool) -> tuple[bool, str | None, bool]:
@@ -137,11 +143,11 @@ class WardrobeCommand(BaseCommand):
             else:
                 lines.append("  （未配置自定义场景）")
 
-            await self.send_text("\n".join(lines))
+            await self.ctx.send.text("\n".join(lines))
             return True, "list", intercept
         except Exception as exc:
             logger.error("Wardrobe list failed: %r", exc, exc_info=True)
-            await self.send_text(f"获取穿搭列表失败：{str(exc)[:120]}")
+            await self.ctx.send.text(f"获取穿搭列表失败：{str(exc)[:120]}")
             return False, f"list异常: {str(exc)}", intercept
 
     async def _cmd_status(self, *, intercept: bool) -> tuple[bool, str | None, bool]:
@@ -202,18 +208,18 @@ class WardrobeCommand(BaseCommand):
                 lines.append("")
                 lines.append("⚠️ wardrobe.enabled = false：衣柜功能当前被禁用")
 
-            await self.send_text("\n".join(lines))
+            await self.ctx.send.text("\n".join(lines))
             return True, "status", intercept
         except Exception as exc:
             logger.error("Wardrobe status failed: %r", exc, exc_info=True)
-            await self.send_text(f"获取衣柜状态失败：{str(exc)[:120]}")
+            await self.ctx.send.text(f"获取衣柜状态失败：{str(exc)[:120]}")
             return False, f"status异常: {str(exc)}", intercept
 
     async def _cmd_wear(self, arg: str, *, intercept: bool) -> tuple[bool, str | None, bool]:
         """管理员：临时更换今日穿搭（持久化到数据库，当天有效）"""
         outfit: str = (arg or "").strip()
         if not outfit:
-            await self.send_text(
+            await self.ctx.send.text(
                 "\n".join(
                     [
                         "用法：/dr wardrobe wear <衣服描述>",
@@ -229,9 +235,9 @@ class WardrobeCommand(BaseCommand):
             from .wardrobe.selector import save_temp_override
 
             await save_temp_override(outfit)
-            await self.send_text(f"✅ 已设置今日临时穿搭：{outfit}\n（今日所有自拍将优先使用此穿搭，次日自动重置）")
+            await self.ctx.send.text(f"✅ 已设置今日临时穿搭：{outfit}\n（今日所有自拍将优先使用此穿搭，次日自动重置）")
             return True, "wear", intercept
         except Exception as exc:
             logger.error("Wardrobe wear failed: %r", exc, exc_info=True)
-            await self.send_text(f"设置穿搭失败：{str(exc)[:120]}")
+            await self.ctx.send.text(f"设置穿搭失败：{str(exc)[:120]}")
             return False, f"wear异常: {str(exc)}", intercept

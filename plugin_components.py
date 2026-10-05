@@ -8,7 +8,6 @@ from src.plugin_system.base.component_types import ComponentInfo
 
 from .core.pic_action import SelfiePainterAction
 from .core.pic_command import PicConfigCommand, PicGenerationCommand, PicStyleCommand
-from .core.wardrobe_command import WardrobeCommand
 
 
 def build_plugin_components(plugin: Any) -> List[Tuple[ComponentInfo, Type[Any]]]:
@@ -29,7 +28,6 @@ def build_plugin_components(plugin: Any) -> List[Tuple[ComponentInfo, Type[Any]]
         components.append((PicStyleCommand.get_command_info(), PicStyleCommand))
 
     if enable_pic_command:
-        components.append((WardrobeCommand.get_command_info(), WardrobeCommand))
         components.append((PicGenerationCommand.get_command_info(), PicGenerationCommand))
 
 

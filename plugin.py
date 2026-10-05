@@ -29,11 +29,12 @@ from .plugin_schema import CONFIG_LAYOUT, CONFIG_SCHEMA, CONFIG_SECTION_DESCRIPT
 from .plugin_runtime import PluginRuntimeMixin
 from .core.schedule_inject_handler import ScheduleInjectMixin
 from .core.schedule_command import ScheduleCommandMixin
+from .core.wardrobe_command import WardrobeCommandMixin
 
 logger = logging.getLogger("selfie_painter_v2")
 
 
-class SelfiePainterV2Plugin(MaiBotPlugin, PluginRuntimeMixin, ScheduleInjectMixin, ScheduleCommandMixin):
+class SelfiePainterV2Plugin(MaiBotPlugin, PluginRuntimeMixin, ScheduleInjectMixin, ScheduleCommandMixin, WardrobeCommandMixin):
     """麦麦绘卷 v2 (selfie_painter_v2) - 智能多模型图片生成插件，支持文生图和图生图"""
 
     # 插件基本信息
@@ -454,6 +455,15 @@ class SelfiePainterV2Plugin(MaiBotPlugin, PluginRuntimeMixin, ScheduleInjectMixi
     )
     async def handle_schedule_command(self, stream_id: str = "", matched_groups: dict | None = None, **kwargs):
         return await self.handle_schedule(stream_id=stream_id, matched_groups=matched_groups, **kwargs)
+
+    # Command: /dr wardrobe
+    @Command(
+        "wardrobe_command",
+        description="衣柜/穿搭控制：/dr wardrobe|衣柜 <subcommand>",
+        pattern=r"(?:.*，说：\s*)?/dr\s+(?P<action>wardrobe|衣柜)(?:\s+(?P<sub>\S+))?(?:\s+(?P<arg>.*))?$",
+    )
+    async def handle_wardrobe_command(self, stream_id: str = "", user_id: str = "", matched_groups: dict | None = None, message: Any = None, **kwargs: Any):
+        return await self.handle_wardrobe(stream_id=stream_id, user_id=user_id, matched_groups=matched_groups, message=message, **kwargs)
 
     def get_plugin_components(self) -> List[Tuple[Any, Type]]:
         """返回插件包含的组件列表（B1 阶段暂时保留，B3 将改为装饰器）。"""
