@@ -8,20 +8,14 @@
 """
 
 import logging
-from typing import Optional, Tuple
+from typing import Any, Optional, Tuple
 
-from src.plugin_system.base.base_command import BaseCommand
 
 logger = logging.getLogger(__name__)
 
 
-class ScheduleCommand(BaseCommand):
-    """日程查看与管理命令"""
-
-    command_name: str = "schedule_command"
-    command_description: str = "查看和管理麦麦的日程"
-    command_pattern: str = r"^/(schedule|日程)\s*(?P<sub>\S+)?\s*(?P<arg>\S+)?$"
-    intercept_level: int = 2
+class ScheduleCommandMixin:
+    """Schedule command mixin."""
 
     @staticmethod
     def _format_time_range(start_min: int, end_min: int) -> str:
@@ -30,14 +24,21 @@ class ScheduleCommand(BaseCommand):
         end_hour, end_minute = divmod(end_min, 60)
         return f"{start_hour:02d}:{start_minute:02d}-{end_hour:02d}:{end_minute:02d}"
 
-    async def execute(self) -> Tuple[bool, Optional[str], bool]:
+    async def handle_schedule(
+        self,
+        stream_id: str = "",
+        matched_groups: dict | None = None,
+        **kwargs: Any,
+    ) -> Tuple[bool, Optional[str], bool]:
         """执行 /schedule 命令
 
         Returns:
             Tuple[bool, Optional[str], bool]: (成功, 消息, 是否拦截)
         """
-        sub = (self.matched_groups.get("sub") or "").strip().lower()
-        arg = (self.matched_groups.get("arg") or "").strip().lower()
+        matched_groups = matched_groups or {}
+        self._current_stream_id = stream_id
+        sub = (matched_groups.get("sub") or "").strip().lower()
+        arg = (matched_groups.get("arg") or "").strip().lower()
 
         if not sub:
             return await self._show_schedule()
@@ -46,11 +47,12 @@ class ScheduleCommand(BaseCommand):
         elif sub == "inject":
             return await self._toggle_inject(arg)
         else:
-            await self.send_text(
+            await self.ctx.send.text(
                 "用法：\n"
                 "/schedule — 查看当前日程\n"
                 "/schedule regen — 重新生成今日日程\n"
-                "/schedule inject on|off — 开关日程注入"
+                "/schedule inject on|off — 开关日程注入",
+                self._current_stream_id,
             )
             return (True, None, True)
 
@@ -93,12 +95,12 @@ class ScheduleCommand(BaseCommand):
             except Exception:
                 lines.append("📊 数据来源：未知")
 
-            await self.send_text("\n".join(lines))
+            await self.ctx.send.text("\n".join(lines), self._current_stream_id)
             return (True, None, True)
 
         except Exception as e:
             logger.error(f"显示日程失败: {e}")
-            await self.send_text(f"获取日程失败：{e}")
+            await self.ctx.send.text(f"获取日程失败：{e}", self._current_stream_id)
             return (True, None, True)
 
     async def _regen_schedule(self) -> Tuple[bool, Optional[str], bool]:
@@ -108,7 +110,7 @@ class ScheduleCommand(BaseCommand):
 
             manager = get_schedule_manager()
 
-            await self.send_text("🔄 正在用 LLM 重新生成今日日程...")
+            await self.ctx.send.text("🔄 正在用 LLM 重新生成今日日程...", self._current_stream_id)
 
             # regen_today_schedule_via_llm 需要一个有 get_config 方法的对象
             class _ConfigProxy:
@@ -125,34 +127,32 @@ class ScheduleCommand(BaseCommand):
                             return default
                     return current
 
-            proxy = _ConfigProxy(self.plugin_config)
+            proxy = _ConfigProxy(self._config_bridge.raw)
             success = await manager.regen_today_schedule_via_llm(proxy)
 
             if success:
-                await self.send_text("✅ 日程已重新生成！使用 /schedule 查看。")
+                await self.ctx.send.text("✅ 日程已重新生成！使用 /schedule 查看。", self._current_stream_id)
             else:
-                await self.send_text("⚠️ LLM 生成失败，已回退到模板日程。")
+                await self.ctx.send.text("⚠️ LLM 生成失败，已回退到模板日程。", self._current_stream_id)
 
             return (True, None, True)
 
         except Exception as e:
             logger.error(f"重新生成日程失败: {e}")
-            await self.send_text(f"重新生成失败：{e}")
+            await self.ctx.send.text(f"重新生成失败：{e}", self._current_stream_id)
             return (True, None, True)
 
     async def _toggle_inject(self, arg: str) -> Tuple[bool, Optional[str], bool]:
         """开关当前会话的日程注入"""
         if arg not in ("on", "off"):
-            await self.send_text("用法：/schedule inject on|off")
+            await self.ctx.send.text("用法：/schedule inject on|off", self._current_stream_id)
             return (True, None, True)
 
         # 从 chat_stream 中获取 stream_id（MessageRecv 本身没有 stream_id 字段）
         stream_id = None
-        if hasattr(self.message, "chat_stream") and self.message.chat_stream:
-            stream_id = getattr(self.message.chat_stream, "stream_id", None)
-
+        stream_id = self._current_stream_id
         if not stream_id:
-            await self.send_text("无法获取当前会话 ID")
+            await self.ctx.send.text("无法获取当前会话 ID", self._current_stream_id)
             return (True, None, True)
 
         try:
@@ -165,10 +165,10 @@ class ScheduleCommand(BaseCommand):
             await manager.set_state(key, str(enabled).lower())
 
             status = "开启" if enabled else "关闭"
-            await self.send_text(f"✅ 当前会话的日程注入已{status}")
+            await self.ctx.send.text(f"✅ 当前会话的日程注入已{status}", self._current_stream_id)
             return (True, None, True)
 
         except Exception as e:
             logger.error(f"切换注入状态失败: {e}")
-            await self.send_text(f"操作失败：{e}")
+            await self.ctx.send.text(f"操作失败：{e}", self._current_stream_id)
             return (True, None, True)

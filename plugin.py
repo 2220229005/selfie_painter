@@ -7,6 +7,7 @@ import logging
 from typing import List, Tuple, Type, Dict, Any
 
 from maibot_sdk import MaiBotPlugin
+from maibot_sdk import Command
 from maibot_sdk import EventHandler
 from maibot_sdk.types import EventType
 # B1 过渡：动态布局注入仍使用旧配置类型，暂从 compat 兼容层获取
@@ -27,11 +28,12 @@ from .plugin_meta import (
 from .plugin_schema import CONFIG_LAYOUT, CONFIG_SCHEMA, CONFIG_SECTION_DESCRIPTIONS, MODEL_FIELD_TEMPLATE
 from .plugin_runtime import PluginRuntimeMixin
 from .core.schedule_inject_handler import ScheduleInjectMixin
+from .core.schedule_command import ScheduleCommandMixin
 
 logger = logging.getLogger("selfie_painter_v2")
 
 
-class SelfiePainterV2Plugin(MaiBotPlugin, PluginRuntimeMixin, ScheduleInjectMixin):
+class SelfiePainterV2Plugin(MaiBotPlugin, PluginRuntimeMixin, ScheduleInjectMixin, ScheduleCommandMixin):
     """麦麦绘卷 v2 (selfie_painter_v2) - 智能多模型图片生成插件，支持文生图和图生图"""
 
     # 插件基本信息
@@ -443,6 +445,15 @@ class SelfiePainterV2Plugin(MaiBotPlugin, PluginRuntimeMixin, ScheduleInjectMixi
     )
     async def handle_schedule_inject_event(self, message=None, **kwargs):
         return await self.handle_schedule_inject(message=message, **kwargs)
+
+    # Command: /schedule
+    @Command(
+        "schedule_command",
+        description="View and manage schedule",
+        pattern=r"^/(schedule|日程)\s*(?P<sub>\S+)?\s*(?P<arg>\S+)?$",
+    )
+    async def handle_schedule_command(self, stream_id: str = "", matched_groups: dict | None = None, **kwargs):
+        return await self.handle_schedule(stream_id=stream_id, matched_groups=matched_groups, **kwargs)
 
     def get_plugin_components(self) -> List[Tuple[Any, Type]]:
         """返回插件包含的组件列表（B1 阶段暂时保留，B3 将改为装饰器）。"""

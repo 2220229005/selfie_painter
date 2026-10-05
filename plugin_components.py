@@ -8,7 +8,6 @@ from src.plugin_system.base.component_types import ComponentInfo
 
 from .core.pic_action import SelfiePainterAction
 from .core.pic_command import PicConfigCommand, PicGenerationCommand, PicStyleCommand
-from .core.schedule_command import ScheduleCommand
 from .core.wardrobe_command import WardrobeCommand
 
 
@@ -33,7 +32,6 @@ def build_plugin_components(plugin: Any) -> List[Tuple[ComponentInfo, Type[Any]]
         components.append((WardrobeCommand.get_command_info(), WardrobeCommand))
         components.append((PicGenerationCommand.get_command_info(), PicGenerationCommand))
 
-    components.append((ScheduleCommand.get_command_info(), ScheduleCommand))
 
     return components
 
