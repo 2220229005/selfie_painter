@@ -7,7 +7,6 @@ from typing import Any, List, Tuple, Type
 from src.plugin_system.base.component_types import ComponentInfo
 
 from .core.pic_action import SelfiePainterAction
-from .core.pic_command import PicConfigCommand, PicGenerationCommand, PicStyleCommand
 
 
 def build_plugin_components(plugin: Any) -> List[Tuple[ComponentInfo, Type[Any]]]:
@@ -20,15 +19,6 @@ def build_plugin_components(plugin: Any) -> List[Tuple[ComponentInfo, Type[Any]]
 
     if enable_unified_generation:
         components.append((SelfiePainterAction.get_action_info(), SelfiePainterAction))
-
-    if enable_pic_config:
-        components.append((PicConfigCommand.get_command_info(), PicConfigCommand))
-
-    if enable_pic_style:
-        components.append((PicStyleCommand.get_command_info(), PicStyleCommand))
-
-    if enable_pic_command:
-        components.append((PicGenerationCommand.get_command_info(), PicGenerationCommand))
 
 
     return components

@@ -30,11 +30,12 @@ from .plugin_runtime import PluginRuntimeMixin
 from .core.schedule_inject_handler import ScheduleInjectMixin
 from .core.schedule_command import ScheduleCommandMixin
 from .core.wardrobe_command import WardrobeCommandMixin
+from .core.pic_command import PicCommandMixin, PicGenerationCommand, PicConfigCommand, PicStyleCommand
 
 logger = logging.getLogger("selfie_painter_v2")
 
 
-class SelfiePainterV2Plugin(MaiBotPlugin, PluginRuntimeMixin, ScheduleInjectMixin, ScheduleCommandMixin, WardrobeCommandMixin):
+class SelfiePainterV2Plugin(MaiBotPlugin, PluginRuntimeMixin, ScheduleInjectMixin, ScheduleCommandMixin, WardrobeCommandMixin, PicGenerationCommand, PicConfigCommand, PicStyleCommand):
     """麦麦绘卷 v2 (selfie_painter_v2) - 智能多模型图片生成插件，支持文生图和图生图"""
 
     # 插件基本信息
@@ -464,6 +465,33 @@ class SelfiePainterV2Plugin(MaiBotPlugin, PluginRuntimeMixin, ScheduleInjectMixi
     )
     async def handle_wardrobe_command(self, stream_id: str = "", user_id: str = "", matched_groups: dict | None = None, message: Any = None, **kwargs: Any):
         return await self.handle_wardrobe(stream_id=stream_id, user_id=user_id, matched_groups=matched_groups, message=message, **kwargs)
+
+    # Command: /dr <风格|描述> (PicGeneration)
+    @Command(
+        "pic_generation_command",
+        description="图生图命令，使用风格化提示词：/dr <风格> 或自然语言：/dr <描述>",
+        pattern=r"(?:.*，说：\s*)?/dr\s+(?!list\b|models\b|config\b|set\b|reset\b|on\b|off\b|model\b|recall\b|default\b|refresh\b|clear\b|status\b|styles\b|style\b|help\b|selfie\b|wardrobe\b|衣柜\b)(?P<content>.+)$",
+    )
+    async def handle_pic_generation_command(self, stream_id: str = "", user_id: str = "", matched_groups: dict | None = None, message: Any = None, **kwargs: Any):
+        return await self.handle_pic_generation(stream_id=stream_id, user_id=user_id, matched_groups=matched_groups, message=message, **kwargs)
+
+    # Command: /dr <操作> (PicConfig)
+    @Command(
+        "pic_config_command",
+        description="图片生成配置管理：/dr <操作> [参数]",
+        pattern=r"(?:.*，说：\s*)?/dr\s+(?P<action>list|models|config|set|reset|on|off|model|recall|default|selfie|refresh|clear|status)(?:\s+(?P<params>.*))?$",
+    )
+    async def handle_pic_config_command(self, stream_id: str = "", user_id: str = "", matched_groups: dict | None = None, message: Any = None, **kwargs: Any):
+        return await self.handle_pic_config(stream_id=stream_id, user_id=user_id, matched_groups=matched_groups, message=message, **kwargs)
+
+    # Command: /dr <风格操作> (PicStyle)
+    @Command(
+        "pic_style_command",
+        description="图片风格管理：/dr <操作> [参数]",
+        pattern=r"(?:.*，说：\s*)?/dr\s+(?P<action>styles|style|help)(?:\s+(?P<params>.*))?$",
+    )
+    async def handle_pic_style_command(self, stream_id: str = "", user_id: str = "", matched_groups: dict | None = None, message: Any = None, **kwargs: Any):
+        return await self.handle_pic_style(stream_id=stream_id, user_id=user_id, matched_groups=matched_groups, message=message, **kwargs)
 
     def get_plugin_components(self) -> List[Tuple[Any, Type]]:
         """返回插件包含的组件列表（B1 阶段暂时保留，B3 将改为装饰器）。"""

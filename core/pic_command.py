@@ -5,8 +5,9 @@ import re
 import time as time_module
 from typing import Any, Dict, Optional, Tuple
 
-from src.plugin_system.base.base_command import BaseCommand  # pyright: ignore[reportMissingImports]
-from src.common.logger import get_logger  # pyright: ignore[reportMissingImports]
+import logging
+
+logger = logging.getLogger(__name__)
 
 from .api_clients import ApiClient
 from .utils import (
@@ -27,16 +28,41 @@ from .utils import (
     extract_context_id_from_chat_stream,
 )
 
-logger = get_logger("mais_art.command")
+logger = logging.getLogger("mais_art.command")
 
 
-class PicCommandMixin(BaseCommand):
-    """公共方法混入，供 PicGenerationCommand / PicConfigCommand / PicStyleCommand 共用"""
+class PicCommandMixin:
+    """公共方法混入，供图片相关命令共用（新版 SDK 迁移版）。"""
+
+    log_prefix: str = "[PicCommand]"
+    _current_stream_id: str = ""
+    _current_user_id: str | None = None
+    _current_message: Any = None
+
+    def _bind_context(self, stream_id: str, user_id: str, message: Any, matched_groups: dict) -> None:
+        """绑定本次调用上下文，供内部辅助方法使用。"""
+        self._current_stream_id = stream_id
+        self._current_message = message
+        self._current_user_id = self._resolve_user_id(user_id, message)
+        self._current_matched_groups = matched_groups
+
+    @staticmethod
+    def _resolve_user_id(user_id: str | None, message: Any) -> str | None:
+        if user_id:
+            return str(user_id)
+        if message is not None:
+            info = getattr(message, "message_info", None)
+            user_info = getattr(info, "user_info", None) if info else None
+            uid = getattr(user_info, "user_id", None) if user_info else None
+            if uid is not None:
+                return str(uid)
+        return None
+
 
     def _get_chat_id(self) -> Optional[str]:
         """获取当前聊天流的规范化上下文 ID，用于访问控制检查"""
         try:
-            chat_stream = self.message.chat_stream if self.message else None
+            chat_stream = self._current_message.chat_stream if self._current_message else None
             if not chat_stream:
                 return None
             # 从 ChatStream 提取规范化的上下文 ID（格式：platform:id:scope）
@@ -57,12 +83,7 @@ class PicCommandMixin(BaseCommand):
             admin_users: list[str] = (
                 [str(user_id) for user_id in admin_users_raw] if isinstance(admin_users_raw, list) else []
             )
-            user_id = (
-                str(self.message.message_info.user_info.user_id)
-                if self.message and self.message.message_info and self.message.message_info.user_info
-                else None
-            )
-            return user_id in admin_users
+            return self._current_user_id in admin_users
         except (AttributeError, TypeError, KeyError) as exc:
             logger.debug(f"{self.log_prefix} 权限检查失败，按无权限处理: {exc}")
             return False
@@ -88,7 +109,7 @@ class PicCommandMixin(BaseCommand):
             return style_name
 
     @staticmethod
-    def _create_role_reference_store(command: BaseCommand) -> "RoleReferenceStore":
+    def _create_role_reference_store(command: Any) -> "RoleReferenceStore":
         """创建角色参考图存储实例"""
         plugin_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
         return RoleReferenceStore(plugin_dir=plugin_dir, config_getter=command.get_config)
@@ -150,11 +171,6 @@ class PicCommandMixin(BaseCommand):
 class PicGenerationCommand(PicCommandMixin):
     """图生图Command组件，支持通过命令进行图生图，可选择特定模型"""
 
-    # Command基本信息
-    command_name = "pic_generation_command"
-    command_description = "图生图命令，使用风格化提示词：/dr <风格> 或自然语言：/dr <描述>"
-    # 排除配置管理保留词，避免与 PicConfigCommand、PicStyleCommand 以及衣柜命令冲突
-    command_pattern = r"(?:.*，说：\s*)?/dr\s+(?!list\b|models\b|config\b|set\b|reset\b|on\b|off\b|model\b|recall\b|default\b|refresh\b|clear\b|status\b|styles\b|style\b|help\b|selfie\b|wardrobe\b|衣柜\b)(?P<content>.+)$"
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -167,14 +183,15 @@ class PicGenerationCommand(PicCommandMixin):
             self._image_processor = ImageProcessor(self)
         return self._image_processor
 
-    async def execute(self) -> Tuple[bool, Optional[str], bool]:
+    async def handle_pic_generation(self, stream_id: str = "", user_id: str = "", matched_groups: dict | None = None, message: Any = None, **kwargs: Any) -> Tuple[bool, Optional[str], bool]:
         """执行图生图命令，智能判断风格模式或自然语言模式"""
+        self._bind_context(stream_id, user_id, message, matched_groups or {})
         logger.info(f"{self.log_prefix} 执行图生图命令")
 
         # 获取聊天流ID
         chat_id = self._get_chat_id()
         if not chat_id:
-            await self.send_text("无法获取聊天信息")
+            await self.ctx.send.text("无法获取聊天信息", self._current_stream_id)
             return False, "无法获取chat_id", True
 
         # 检查插件是否在当前聊天流启用
@@ -184,16 +201,16 @@ class PicGenerationCommand(PicCommandMixin):
             return False, "插件已禁用", True
 
         # 获取匹配的内容
-        content = self.matched_groups.get("content", "").strip()
+        content = (matched_groups or {}).get("content", "").strip()
 
         if not content:
-            await self.send_text("请指定风格或描述，格式：/dr <风格> 或 /dr <描述>\n可用：/dr styles 查看风格列表")
+            await self.ctx.send.text("请指定风格或描述，格式：/dr <风格> 或 /dr <描述>\n可用：/dr styles 查看风格列表", self._current_stream_id)
             return False, "缺少内容参数", True
 
         # 检查是否是配置管理保留词，避免冲突
         config_reserved_words = {"list", "models", "config", "set", "reset", "styles", "style", "help"}
         if content.lower() in config_reserved_words:
-            await self.send_text(f"'{content}' 是保留词，请使用其他名称")
+            await self.ctx.send.text(f"'{content}' 是保留词，请使用其他名称", self._current_stream_id)
             return False, f"使用了保留词: {content}", True
 
         # 智能判断：风格模式 vs 自然语言模式
@@ -218,7 +235,7 @@ class PicGenerationCommand(PicCommandMixin):
             return await self._execute_natural_mode(content)
         else:
             # 短词且不包含动作词 → 可能是拼错的风格名，提示用户
-            await self.send_text(f"风格 '{content}' 不存在，使用 /dr styles 查看所有风格")
+            await self.ctx.send.text(f"风格 '{content}' 不存在，使用 /dr styles 查看所有风格", self._current_stream_id)
             return False, f"风格 '{content}' 不存在", True
 
     async def _execute_style_mode(
@@ -240,16 +257,16 @@ class PicGenerationCommand(PicCommandMixin):
         # 先解析实际模型，避免回退后使用未经检查的模型配置。
         model_id, model_config = self._get_model_config(model_id)
         if not model_config:
-            await self.send_text(f"模型 '{model_id}' 不存在")
+            await self.ctx.send.text(f"模型 '{model_id}' 不存在", self._current_stream_id)
             return False, "模型配置不存在", True
 
         # 检查模型是否在当前聊天流启用
         if chat_id and not runtime_state.is_model_enabled(chat_id, model_id):
-            await self.send_text(f"模型 {model_id} 当前不可用")
+            await self.ctx.send.text(f"模型 {model_id} 当前不可用", self._current_stream_id)
             return False, f"模型 {model_id} 已禁用", True
 
         if chat_id and not is_chat_allowed_for_model(self.get_config, chat_id, model_id):
-            await self.send_text(f"模型 {model_id} 当前聊天流不可用")
+            await self.ctx.send.text(f"模型 {model_id} 当前聊天流不可用", self._current_stream_id)
             return False, f"模型 {model_id} 被访问规则拒绝", True
 
         # 使用风格提示词作为描述
@@ -258,18 +275,18 @@ class PicGenerationCommand(PicCommandMixin):
         # 检查是否启用调试信息
         enable_debug = self.get_config("components.enable_debug_info", False)
         if enable_debug:
-            await self.send_text(f"使用风格：{style_name}")
+            await self.ctx.send.text(f"使用风格：{style_name}", self._current_stream_id)
 
         # 获取最近的图片作为输入图片
         input_image_base64 = await self.image_processor.get_recent_image()
 
         if not input_image_base64:
-            await self.send_text("请先发送图片")
+            await self.ctx.send.text("请先发送图片", self._current_stream_id)
             return False, "未找到输入图片", True
 
         # 检查模型是否支持图生图
         if not model_config.get("support_img2img", True):
-            await self.send_text(f"模型 {model_id} 不支持图生图")
+            await self.ctx.send.text(f"模型 {model_id} 不支持图生图", self._current_stream_id)
             return False, f"模型 {model_id} 不支持图生图", True
 
         # 使用统一的尺寸处理逻辑（异步版本，支持 LLM 选择尺寸）
@@ -279,7 +296,7 @@ class PicGenerationCommand(PicCommandMixin):
 
         # 显示开始信息
         if enable_debug:
-            await self.send_text(f"正在使用 {model_id} 模型进行 {style_name} 风格转换...")
+            await self.ctx.send.text(f"正在使用 {model_id} 模型进行 {style_name} 风格转换...", self._current_stream_id)
 
         try:
             # 获取重试次数配置
@@ -304,7 +321,7 @@ class PicGenerationCommand(PicCommandMixin):
                 # 统一处理 API 响应（dict/str 等）→ 纯字符串
                 final_image_data = self.image_processor.process_api_response(result)
                 if not final_image_data:
-                    await self.send_text("API返回数据格式错误")
+                    await self.ctx.send.text("API返回数据格式错误", self._current_stream_id)
                     return False, "API返回数据格式错误", True
 
                 # 处理结果：统一解析为 base64
@@ -313,25 +330,25 @@ class PicGenerationCommand(PicCommandMixin):
                 )
                 if resolved_ok:
                     send_timestamp = time_module.time()
-                    send_success = await self.send_image(resolved_data)
+                    send_success = await self.ctx.send.image(resolved_data, self._current_stream_id)
                     if send_success:
                         if enable_debug:
-                            await self.send_text(f"{style_name} 风格转换完成！")
+                            await self.ctx.send.text(f"{style_name} 风格转换完成！", self._current_stream_id)
                         await self._schedule_auto_recall_for_recent_message(model_config, model_id, send_timestamp)
                         return True, "图生图命令执行成功", True
                     else:
-                        await self.send_text("图片发送失败")
+                        await self.ctx.send.text("图片发送失败", self._current_stream_id)
                         return False, "图片发送失败", True
                 else:
-                    await self.send_text(f"图片处理失败：{resolved_data}")
+                    await self.ctx.send.text(f"图片处理失败：{resolved_data}", self._current_stream_id)
                     return False, f"图片处理失败: {resolved_data}", True
             else:
-                await self.send_text(f"{style_name} 风格转换失败：{result}")
+                await self.ctx.send.text(f"{style_name} 风格转换失败：{result}", self._current_stream_id)
                 return False, f"图生图失败: {result}", True
 
         except Exception as e:
             logger.error(f"{self.log_prefix} 命令执行异常: {e!r}", exc_info=True)
-            await self.send_text(f"执行失败：{str(e)[:100]}")
+            await self.ctx.send.text(f"执行失败：{str(e)[:100]}", self._current_stream_id)
             return False, f"命令执行异常: {str(e)}", True
 
     async def _execute_natural_mode(self, description: str) -> Tuple[bool, Optional[str], bool]:
@@ -367,16 +384,16 @@ class PicGenerationCommand(PicCommandMixin):
         # 获取模型配置（修复 F4：使用实际配置节 ID 进行权限检查）
         actual_model_id, model_config = self._get_model_config(model_id)
         if not model_config:
-            await self.send_text(f"模型 '{model_id}' 不存在")
+            await self.ctx.send.text(f"模型 '{model_id}' 不存在", self._current_stream_id)
             return False, "模型配置不存在", True
 
         # 修复 F4：使用实际配置节 ID 进行权限检查
         model_id = actual_model_id
         if chat_id and not runtime_state.is_model_enabled(chat_id, model_id):
-            await self.send_text(f"模型 {model_id} 当前不可用")
+            await self.ctx.send.text(f"模型 {model_id} 当前不可用", self._current_stream_id)
             return False, f"模型 {model_id} 已禁用", True
         if chat_id and not is_chat_allowed_for_model(self.get_config, chat_id, actual_model_id):
-            await self.send_text(f"模型 {model_id} 当前聊天流不可用")
+            await self.ctx.send.text(f"模型 {model_id} 当前聊天流不可用", self._current_stream_id)
             return False, f"模型 {actual_model_id} 被访问规则拒绝", True
 
         # 检查是否启用调试信息
@@ -392,7 +409,7 @@ class PicGenerationCommand(PicCommandMixin):
             if not model_config.get("support_img2img", True):
                 logger.warning(f"{self.log_prefix} 模型 {model_id} 不支持图生图，自动降级为文生图")
                 if enable_debug:
-                    await self.send_text(f"模型 {model_id} 不支持图生图，将为您生成新图片")
+                    await self.ctx.send.text(f"模型 {model_id} 不支持图生图，将为您生成新图片", self._current_stream_id)
                 # 降级为文生图
                 input_image_base64 = None
                 is_img2img_mode = False
@@ -412,7 +429,7 @@ class PicGenerationCommand(PicCommandMixin):
         image_size, llm_original_size = await get_image_size_async(model_config, description, None, self.log_prefix)
 
         if enable_debug:
-            await self.send_text(f"正在使用 {model_id} 模型进行{mode_text}...")
+            await self.ctx.send.text(f"正在使用 {model_id} 模型进行{mode_text}...", self._current_stream_id)
 
         try:
             # 获取重试次数配置
@@ -437,7 +454,7 @@ class PicGenerationCommand(PicCommandMixin):
                 # 统一处理 API 响应（dict/str 等）→ 纯字符串
                 final_image_data = self.image_processor.process_api_response(result)
                 if not final_image_data:
-                    await self.send_text("API返回数据格式错误")
+                    await self.ctx.send.text("API返回数据格式错误", self._current_stream_id)
                     return False, "API返回数据格式错误", True
 
                 # 处理结果：统一解析为 base64
@@ -446,25 +463,25 @@ class PicGenerationCommand(PicCommandMixin):
                 )
                 if resolved_ok:
                     send_timestamp = time_module.time()
-                    send_success = await self.send_image(resolved_data)
+                    send_success = await self.ctx.send.image(resolved_data, self._current_stream_id)
                     if send_success:
                         if enable_debug:
-                            await self.send_text(f"{mode_text}完成！")
+                            await self.ctx.send.text(f"{mode_text}完成！", self._current_stream_id)
                         await self._schedule_auto_recall_for_recent_message(model_config, model_id, send_timestamp)
                         return True, f"{mode_text}命令执行成功", True
                     else:
-                        await self.send_text("图片发送失败")
+                        await self.ctx.send.text("图片发送失败", self._current_stream_id)
                         return False, "图片发送失败", True
                 else:
-                    await self.send_text(f"图片处理失败：{resolved_data}")
+                    await self.ctx.send.text(f"图片处理失败：{resolved_data}", self._current_stream_id)
                     return False, f"图片处理失败: {resolved_data}", True
             else:
-                await self.send_text(f"{mode_text}失败：{result}")
+                await self.ctx.send.text(f"{mode_text}失败：{result}", self._current_stream_id)
                 return False, f"{mode_text}失败: {result}", True
 
         except Exception as e:
             logger.error(f"{self.log_prefix} 命令执行异常: {e!r}", exc_info=True)
-            await self.send_text(f"执行失败：{str(e)[:100]}")
+            await self.ctx.send.text(f"执行失败：{str(e)[:100]}", self._current_stream_id)
             return False, f"命令执行异常: {str(e)}", True
 
     def _extract_model_id(self, description: str) -> Optional[str]:
@@ -557,24 +574,25 @@ class PicGenerationCommand(PicCommandMixin):
             logger.info(f"{self.log_prefix} 模型 {model_id} 撤回已在当前聊天流禁用")
             return
 
-        await schedule_auto_recall(chat_id, delay_seconds, self.log_prefix, self.send_command, send_timestamp)
+        async def _send_cmd(command: str) -> Any:
+            return await self.ctx.send.command(command, self._current_stream_id)
+
+        await schedule_auto_recall(chat_id, delay_seconds, self.log_prefix, _send_cmd, send_timestamp)
 
 
 class PicConfigCommand(PicCommandMixin):
     """图片生成配置管理命令"""
 
     # Command基本信息
-    command_name = "pic_config_command"
-    command_description = "图片生成配置管理：/dr <操作> [参数]"
-    command_pattern = r"(?:.*，说：\s*)?/dr\s+(?P<action>list|models|config|set|reset|on|off|model|recall|default|selfie|refresh|clear|status)(?:\s+(?P<params>.*))?$"
 
-    async def execute(self) -> Tuple[bool, Optional[str], bool]:
+    async def handle_pic_config(self, stream_id: str = "", user_id: str = "", matched_groups: dict | None = None, message: Any = None, **kwargs: Any) -> Tuple[bool, Optional[str], bool]:
         """执行配置管理命令"""
+        self._bind_context(stream_id, user_id, message, matched_groups or {})
         logger.info(f"{self.log_prefix} 执行图片配置管理命令")
 
         # 获取匹配的参数
-        action = self.matched_groups.get("action", "").strip()
-        params = self.matched_groups.get("params", "") or ""
+        action = (matched_groups or {}).get("action", "").strip()
+        params = (matched_groups or {}).get("params", "") or ""
         params = params.strip()
 
         # 检查用户权限
@@ -583,7 +601,7 @@ class PicConfigCommand(PicCommandMixin):
         # 获取聊天流ID
         chat_id = self._get_chat_id()
         if not chat_id:
-            await self.send_text("无法获取聊天信息")
+            await self.ctx.send.text("无法获取聊天信息", self._current_stream_id)
             return False, "无法获取chat_id", True
 
         # 需要管理员权限的操作
@@ -601,7 +619,7 @@ class PicConfigCommand(PicCommandMixin):
             "status",
         ]
         if not has_permission and action in admin_only_actions:
-            await self.send_text("你无权使用此命令", storage_message=False)
+            await self.ctx.send.text("你无权使用此命令", self._current_stream_id)
             return False, "没有权限", True
 
         if action == "list" or action == "models":
@@ -631,7 +649,7 @@ class PicConfigCommand(PicCommandMixin):
         elif action == "status":
             return await self._show_role_reference_status(params)
         else:
-            await self.send_text(
+            await self.ctx.send.text(
                 "配置管理命令使用方法：\n"
                 "/dr list - 列出所有可用模型\n"
                 "/dr config - 显示当前配置\n"
@@ -640,7 +658,7 @@ class PicConfigCommand(PicCommandMixin):
                 "/dr status <角色名> - 查看角色参考状态\n"
                 "/dr clear <角色名> - 清除角色参考缓存\n"
                 "/dr reset - 重置为默认配置"
-            )
+            , self._current_stream_id)
             return False, "无效的操作参数", True
 
     async def _list_models(self, chat_id: str, is_admin: bool) -> Tuple[bool, Optional[str], bool]:
@@ -648,11 +666,11 @@ class PicConfigCommand(PicCommandMixin):
         try:
             models_config = self.get_config("models", {})
             if not models_config:
-                await self.send_text("未找到任何模型配置")
+                await self.ctx.send.text("未找到任何模型配置", self._current_stream_id)
                 return False, "无模型配置", True
 
             if not isinstance(models_config, dict):
-                await self.send_text("模型配置格式错误")
+                await self.ctx.send.text("模型配置格式错误", self._current_stream_id)
                 return False, "模型配置格式错误", True
 
             # 获取当前默认模型
@@ -707,45 +725,45 @@ class PicConfigCommand(PicCommandMixin):
             )
 
             message = "\n".join(message_lines)
-            await self.send_text(message)
+            await self.ctx.send.text(message, self._current_stream_id)
             return True, "模型列表查询成功", True
 
         except Exception as e:
             logger.error(f"{self.log_prefix} 列出模型失败: {e!r}")
-            await self.send_text(f"获取模型列表失败：{str(e)[:100]}")
+            await self.ctx.send.text(f"获取模型列表失败：{str(e)[:100]}", self._current_stream_id)
             return False, f"列出模型失败: {str(e)}", True
 
     async def _set_model(self, model_id: str, chat_id: str) -> Tuple[bool, Optional[str], bool]:
         """设置图生图命令使用的模型（Command组件）"""
         try:
             if not model_id:
-                await self.send_text("请指定模型ID，格式：/dr set <模型ID>")
+                await self.ctx.send.text("请指定模型ID，格式：/dr set <模型ID>", self._current_stream_id)
                 return False, "缺少模型ID参数", True
 
             # 检查模型是否存在
             model_config = self.get_config(f"models.{model_id}")
             if not model_config:
-                await self.send_text(f"模型 '{model_id}' 不存在，请使用 /dr list 查看可用模型")
+                await self.ctx.send.text(f"模型 '{model_id}' 不存在，请使用 /dr list 查看可用模型", self._current_stream_id)
                 return False, f"模型 '{model_id}' 不存在", True
 
             # 检查模型是否被禁用
             if not runtime_state.is_model_enabled(chat_id, model_id):
-                await self.send_text(f"模型 '{model_id}' 已被禁用")
+                await self.ctx.send.text(f"模型 '{model_id}' 已被禁用", self._current_stream_id)
                 return False, f"模型 '{model_id}' 已被禁用", True
 
             if not is_chat_allowed_for_model(self.get_config, chat_id, model_id):
-                await self.send_text(f"模型 '{model_id}' 当前聊天流不可用")
+                await self.ctx.send.text(f"模型 '{model_id}' 当前聊天流不可用", self._current_stream_id)
                 return False, f"模型 '{model_id}' 被访问规则拒绝", True
 
             # 设置运行时状态
             runtime_state.set_command_default_model(chat_id, model_id)
 
-            await self.send_text(f"已切换: {model_id}")
+            await self.ctx.send.text(f"已切换: {model_id}", self._current_stream_id)
             return True, f"模型切换成功: {model_id}", True
 
         except Exception as e:
             logger.error(f"{self.log_prefix} 设置模型失败: {e!r}")
-            await self.send_text(f"设置失败：{str(e)[:100]}")
+            await self.ctx.send.text(f"设置失败：{str(e)[:100]}", self._current_stream_id)
             return False, f"设置模型失败: {str(e)}", True
 
     async def _reset_config(self, chat_id: str) -> Tuple[bool, Optional[str], bool]:
@@ -764,7 +782,7 @@ class PicConfigCommand(PicCommandMixin):
                 global_command_raw if isinstance(global_command_raw, str) and global_command_raw else "model1"
             )
 
-            await self.send_text(
+            await self.ctx.send.text(
                 f"✅ 当前聊天流配置已重置！\n\n"
                 f"🎯 默认模型: {global_action_model}\n"
                 f"🔧 /dr命令模型: {global_command_model}\n"
@@ -772,14 +790,14 @@ class PicConfigCommand(PicCommandMixin):
                 f"📋 所有模型已启用\n"
                 f"🔔 所有撤回已启用\n\n"
                 f"使用 /dr config 查看当前配置"
-            )
+            , self._current_stream_id)
 
             logger.info(f"{self.log_prefix} 聊天流 {chat_id} 配置已重置")
             return True, "配置重置成功", True
 
         except Exception as e:
             logger.error(f"{self.log_prefix} 重置配置失败: {e!r}")
-            await self.send_text(f"重置失败：{str(e)[:100]}")
+            await self.ctx.send.text(f"重置失败：{str(e)[:100]}", self._current_stream_id)
             return False, f"重置配置失败: {str(e)}", True
 
     async def _show_current_config(self, chat_id: str) -> Tuple[bool, Optional[str], bool]:
@@ -856,34 +874,34 @@ class PicConfigCommand(PicCommandMixin):
                 message_lines.append(f"🔕 撤回已关闭: {', '.join(recall_disabled)}")
 
             message = "\n".join(message_lines)
-            await self.send_text(message)
+            await self.ctx.send.text(message, self._current_stream_id)
             return True, "配置信息查询成功", True
 
         except Exception as e:
             logger.error(f"{self.log_prefix} 显示配置失败: {e!r}")
-            await self.send_text(f"获取配置失败：{str(e)[:100]}")
+            await self.ctx.send.text(f"获取配置失败：{str(e)[:100]}", self._current_stream_id)
             return False, f"显示配置失败: {str(e)}", True
 
     async def _enable_plugin(self, chat_id: str) -> Tuple[bool, Optional[str], bool]:
         """启用当前聊天流的插件"""
         try:
             runtime_state.set_plugin_enabled(chat_id, True)
-            await self.send_text("已启用")
+            await self.ctx.send.text("已启用", self._current_stream_id)
             return True, "插件已启用", True
         except Exception as e:
             logger.error(f"{self.log_prefix} 启用插件失败: {e!r}")
-            await self.send_text(f"启用失败：{str(e)[:100]}")
+            await self.ctx.send.text(f"启用失败：{str(e)[:100]}", self._current_stream_id)
             return False, f"启用插件失败: {str(e)}", True
 
     async def _disable_plugin(self, chat_id: str) -> Tuple[bool, Optional[str], bool]:
         """禁用当前聊天流的插件"""
         try:
             runtime_state.set_plugin_enabled(chat_id, False)
-            await self.send_text("已禁用")
+            await self.ctx.send.text("已禁用", self._current_stream_id)
             return True, "插件已禁用", True
         except Exception as e:
             logger.error(f"{self.log_prefix} 禁用插件失败: {e!r}")
-            await self.send_text(f"禁用失败：{str(e)[:100]}")
+            await self.ctx.send.text(f"禁用失败：{str(e)[:100]}", self._current_stream_id)
             return False, f"禁用插件失败: {str(e)}", True
 
     async def _toggle_model(self, params: str, chat_id: str) -> Tuple[bool, Optional[str], bool]:
@@ -892,31 +910,31 @@ class PicConfigCommand(PicCommandMixin):
             # 解析参数: on/off model_id
             parts = params.split(maxsplit=1)
             if len(parts) < 2:
-                await self.send_text("格式：/dr model on|off <模型ID>")
+                await self.ctx.send.text("格式：/dr model on|off <模型ID>", self._current_stream_id)
                 return False, "参数不足", True
 
             action, model_id = parts[0].lower(), parts[1].strip()
 
             if action not in ["on", "off"]:
-                await self.send_text("格式：/dr model on|off <模型ID>")
+                await self.ctx.send.text("格式：/dr model on|off <模型ID>", self._current_stream_id)
                 return False, "无效的操作", True
 
             # 检查模型是否存在
             model_config = self.get_config(f"models.{model_id}")
             if not model_config:
-                await self.send_text(f"模型 '{model_id}' 不存在")
+                await self.ctx.send.text(f"模型 '{model_id}' 不存在", self._current_stream_id)
                 return False, "模型不存在", True
 
             enabled = action == "on"
             runtime_state.set_model_enabled(chat_id, model_id, enabled)
 
             status = "启用" if enabled else "禁用"
-            await self.send_text(f"{model_id} 已{status}")
+            await self.ctx.send.text(f"{model_id} 已{status}", self._current_stream_id)
             return True, f"模型{status}成功", True
 
         except Exception as e:
             logger.error(f"{self.log_prefix} 切换模型状态失败: {e!r}")
-            await self.send_text(f"操作失败：{str(e)[:100]}")
+            await self.ctx.send.text(f"操作失败：{str(e)[:100]}", self._current_stream_id)
             return False, f"切换模型状态失败: {str(e)}", True
 
     async def _toggle_recall(self, params: str, chat_id: str) -> Tuple[bool, Optional[str], bool]:
@@ -925,63 +943,63 @@ class PicConfigCommand(PicCommandMixin):
             # 解析参数: on/off model_id
             parts = params.split(maxsplit=1)
             if len(parts) < 2:
-                await self.send_text("格式：/dr recall on|off <模型ID>")
+                await self.ctx.send.text("格式：/dr recall on|off <模型ID>", self._current_stream_id)
                 return False, "参数不足", True
 
             action, model_id = parts[0].lower(), parts[1].strip()
 
             if action not in ["on", "off"]:
-                await self.send_text("格式：/dr recall on|off <模型ID>")
+                await self.ctx.send.text("格式：/dr recall on|off <模型ID>", self._current_stream_id)
                 return False, "无效的操作", True
 
             # 检查模型是否存在
             model_config = self.get_config(f"models.{model_id}")
             if not model_config:
-                await self.send_text(f"模型 '{model_id}' 不存在")
+                await self.ctx.send.text(f"模型 '{model_id}' 不存在", self._current_stream_id)
                 return False, "模型不存在", True
 
             enabled = action == "on"
             runtime_state.set_recall_enabled(chat_id, model_id, enabled)
 
             status = "启用" if enabled else "禁用"
-            await self.send_text(f"{model_id} 撤回已{status}")
+            await self.ctx.send.text(f"{model_id} 撤回已{status}", self._current_stream_id)
             return True, f"撤回{status}成功", True
 
         except Exception as e:
             logger.error(f"{self.log_prefix} 切换撤回状态失败: {e!r}")
-            await self.send_text(f"操作失败：{str(e)[:100]}")
+            await self.ctx.send.text(f"操作失败：{str(e)[:100]}", self._current_stream_id)
             return False, f"切换撤回状态失败: {str(e)}", True
 
     async def _set_default_model(self, model_id: str, chat_id: str) -> Tuple[bool, Optional[str], bool]:
         """设置Action组件的默认模型"""
         try:
             if not model_id:
-                await self.send_text("格式：/dr default <模型ID>")
+                await self.ctx.send.text("格式：/dr default <模型ID>", self._current_stream_id)
                 return False, "缺少模型ID", True
 
             # 检查模型是否存在
             model_config = self.get_config(f"models.{model_id}")
             if not model_config:
-                await self.send_text(f"模型 '{model_id}' 不存在")
+                await self.ctx.send.text(f"模型 '{model_id}' 不存在", self._current_stream_id)
                 return False, "模型不存在", True
 
             # 检查模型是否被禁用
             if not runtime_state.is_model_enabled(chat_id, model_id):
-                await self.send_text(f"模型 '{model_id}' 已被禁用")
+                await self.ctx.send.text(f"模型 '{model_id}' 已被禁用", self._current_stream_id)
                 return False, "模型已被禁用", True
 
             if not is_chat_allowed_for_model(self.get_config, chat_id, model_id):
-                await self.send_text(f"模型 '{model_id}' 当前聊天流不可用")
+                await self.ctx.send.text(f"模型 '{model_id}' 当前聊天流不可用", self._current_stream_id)
                 return False, "模型被访问规则拒绝", True
 
             runtime_state.set_action_default_model(chat_id, model_id)
 
-            await self.send_text(f"已设置: {model_id}")
+            await self.ctx.send.text(f"已设置: {model_id}", self._current_stream_id)
             return True, "设置成功", True
 
         except Exception as e:
             logger.error(f"{self.log_prefix} 设置默认模型失败: {e!r}")
-            await self.send_text(f"设置失败：{str(e)[:100]}")
+            await self.ctx.send.text(f"设置失败：{str(e)[:100]}", self._current_stream_id)
             return False, f"设置默认模型失败: {str(e)}", True
 
     async def _toggle_selfie_schedule(self, params: str, chat_id: str) -> Tuple[bool, Optional[str], bool]:
@@ -994,65 +1012,65 @@ class PicConfigCommand(PicCommandMixin):
                 enabled = action == "on"
                 runtime_state.set_selfie_schedule_enabled(chat_id, enabled)
                 status = "启用" if enabled else "禁用"
-                await self.send_text(f"自拍日程增强已{status}")
+                await self.ctx.send.text(f"自拍日程增强已{status}", self._current_stream_id)
                 return True, f"自拍日程增强{status}成功", True
 
             # /dr selfie standard|mirror|photo → 切换自拍风格
             normalized_style = normalize_selfie_style(action, "")
             if normalized_style:
                 runtime_state.set_selfie_style(chat_id, normalized_style)
-                await self.send_text(
-                    f"自拍风格已切换为: {get_selfie_style_display_name(normalized_style)}（{normalized_style}）"
+                await self.ctx.send.text(
+                    f"自拍风格已切换为: {get_selfie_style_display_name(normalized_style, self._current_stream_id)}（{normalized_style}）"
                 )
                 return True, f"自拍风格切换为{normalized_style}", True
 
-            await self.send_text("格式：/dr selfie on|off（日程增强）或 /dr selfie standard|mirror|photo（自拍风格）")
+            await self.ctx.send.text("格式：/dr selfie on|off（日程增强）或 /dr selfie standard|mirror|photo（自拍风格）", self._current_stream_id)
             return False, "参数无效", True
 
         except Exception as e:
             logger.error(f"{self.log_prefix} 自拍设置失败: {e!r}")
-            await self.send_text(f"操作失败：{str(e)[:100]}")
+            await self.ctx.send.text(f"操作失败：{str(e)[:100]}", self._current_stream_id)
             return False, f"自拍设置失败: {str(e)}", True
 
     async def _refresh_role_reference(self, params: str) -> Tuple[bool, Optional[str], bool]:
         """刷新指定角色的参考图（搜索 + 下载 + VLM 提取特征）"""
         role_name = str(params or "").strip()
         if not role_name:
-            await self.send_text("用法: /dr refresh <角色名>")
+            await self.ctx.send.text("用法: /dr refresh <角色名>", self._current_stream_id)
             return False, "missing role name", True
 
         if not self.get_config("search_reference.enabled", False):
-            await self.send_text("角色参考功能未启用，请先在配置中开启 search_reference.enabled")
+            await self.ctx.send.text("角色参考功能未启用，请先在配置中开启 search_reference.enabled", self._current_stream_id)
             return False, "search_reference disabled", True
 
         store = self._create_role_reference_store(self)
         ok, message = await store.refresh_role(role_name)
-        await self.send_text(message)
+        await self.ctx.send.text(message, self._current_stream_id)
         return ok, message, True
 
     async def _clear_role_reference(self, params: str) -> Tuple[bool, Optional[str], bool]:
         """清除指定角色的参考图缓存"""
         role_name = str(params or "").strip()
         if not role_name:
-            await self.send_text("用法: /dr clear <角色名>")
+            await self.ctx.send.text("用法: /dr clear <角色名>", self._current_stream_id)
             return False, "missing role name", True
 
         store = self._create_role_reference_store(self)
         ok, message = store.clear_role(role_name)
-        await self.send_text(message)
+        await self.ctx.send.text(message, self._current_stream_id)
         return ok, message, True
 
     async def _show_role_reference_status(self, params: str) -> Tuple[bool, Optional[str], bool]:
         """查看指定角色参考图的状态信息"""
         role_name = str(params or "").strip()
         if not role_name:
-            await self.send_text("用法: /dr status <角色名>")
+            await self.ctx.send.text("用法: /dr status <角色名>", self._current_stream_id)
             return False, "missing role name", True
 
         store = self._create_role_reference_store(self)
         ok, data = store.role_status(role_name)
         if not ok:
-            await self.send_text(str(data.get("message", "查询失败")))
+            await self.ctx.send.text(str(data.get("message", "查询失败")), self._current_stream_id)
             return False, "status failed", True
 
         message = (
@@ -1061,7 +1079,7 @@ class PicConfigCommand(PicCommandMixin):
             f"大小: {data.get('size_mb', 0)} MB\n"
             f"更新时间: {data.get('updated_at', '未知')}"
         )
-        await self.send_text(message)
+        await self.ctx.send.text(message, self._current_stream_id)
         return True, "status ok", True
 
 
@@ -1069,17 +1087,15 @@ class PicStyleCommand(PicCommandMixin):
     """图片风格管理命令"""
 
     # Command基本信息
-    command_name = "pic_style_command"
-    command_description = "图片风格管理：/dr <操作> [参数]"
-    command_pattern = r"(?:.*，说：\s*)?/dr\s+(?P<action>styles|style|help)(?:\s+(?P<params>.*))?$"
 
-    async def execute(self) -> Tuple[bool, Optional[str], bool]:
+    async def handle_pic_style(self, stream_id: str = "", user_id: str = "", matched_groups: dict | None = None, message: Any = None, **kwargs: Any) -> Tuple[bool, Optional[str], bool]:
         """执行风格管理命令"""
+        self._bind_context(stream_id, user_id, message, matched_groups or {})
         logger.info(f"{self.log_prefix} 执行图片风格管理命令")
 
         # 获取匹配的参数
-        action = self.matched_groups.get("action", "").strip()
-        params = self.matched_groups.get("params", "") or ""
+        action = (matched_groups or {}).get("action", "").strip()
+        params = (matched_groups or {}).get("params", "") or ""
         params = params.strip()
 
         # 检查用户权限
@@ -1087,7 +1103,7 @@ class PicStyleCommand(PicCommandMixin):
 
         # style命令需要管理员权限
         if action == "style" and not has_permission:
-            await self.send_text("你无权使用此命令", storage_message=False)
+            await self.ctx.send.text("你无权使用此命令", self._current_stream_id)
             return False, "没有权限", True
 
         if action == "styles":
@@ -1097,12 +1113,12 @@ class PicStyleCommand(PicCommandMixin):
         elif action == "help":
             return await self._show_help()
         else:
-            await self.send_text(
+            await self.ctx.send.text(
                 "风格管理命令使用方法：\n"
                 "/dr styles - 列出所有可用风格\n"
                 "/dr style <风格名> - 显示风格详情\n"
                 "/dr help - 显示帮助信息"
-            )
+            , self._current_stream_id)
             return False, "无效的操作参数", True
 
     async def _list_styles(self) -> Tuple[bool, Optional[str], bool]:
@@ -1114,7 +1130,7 @@ class PicStyleCommand(PicCommandMixin):
             aliases_config: dict[str, Any] = aliases_config_raw if isinstance(aliases_config_raw, dict) else {}
 
             if not styles_config:
-                await self.send_text("未找到任何风格配置")
+                await self.ctx.send.text("未找到任何风格配置", self._current_stream_id)
                 return False, "无风格配置", True
 
             message_lines = ["🎨 可用风格列表：\n"]
@@ -1134,19 +1150,19 @@ class PicStyleCommand(PicCommandMixin):
 
             message_lines.append("\n💡 使用方法: /dr <风格名>")
             message = "\n".join(message_lines)
-            await self.send_text(message)
+            await self.ctx.send.text(message, self._current_stream_id)
             return True, "风格列表查询成功", True
 
         except Exception as e:
             logger.error(f"{self.log_prefix} 列出风格失败: {e!r}")
-            await self.send_text(f"获取风格列表失败：{str(e)[:100]}")
+            await self.ctx.send.text(f"获取风格列表失败：{str(e)[:100]}", self._current_stream_id)
             return False, f"列出风格失败: {str(e)}", True
 
     async def _show_style(self, style_name: str) -> Tuple[bool, Optional[str], bool]:
         """显示指定风格的详细信息"""
         try:
             if not style_name:
-                await self.send_text("请指定风格名，格式：/dr style <风格名>")
+                await self.ctx.send.text("请指定风格名，格式：/dr style <风格名>", self._current_stream_id)
                 return False, "缺少风格名参数", True
 
             # 解析风格别名
@@ -1154,7 +1170,7 @@ class PicStyleCommand(PicCommandMixin):
             style_prompt = self.get_config(f"styles.{actual_style}")
 
             if not style_prompt:
-                await self.send_text(f"风格 '{style_name}' 不存在，请使用 /dr styles 查看可用风格")
+                await self.ctx.send.text(f"风格 '{style_name}' 不存在，请使用 /dr styles 查看可用风格", self._current_stream_id)
                 return False, f"风格 '{style_name}' 不存在", True
 
             # 查找别名
@@ -1174,12 +1190,12 @@ class PicStyleCommand(PicCommandMixin):
             message_lines.extend(["💡 使用方法：", f"/dr {style_name}", "\n⚠️ 注意：需要先发送一张图片作为输入"])
 
             message = "\n".join(message_lines)
-            await self.send_text(message)
+            await self.ctx.send.text(message, self._current_stream_id)
             return True, "风格详情查询成功", True
 
         except Exception as e:
             logger.error(f"{self.log_prefix} 显示风格详情失败: {e!r}")
-            await self.send_text(f"获取风格详情失败：{str(e)[:100]}")
+            await self.ctx.send.text(f"获取风格详情失败：{str(e)[:100]}", self._current_stream_id)
             return False, f"显示风格详情失败: {str(e)}", True
 
     async def _show_help(self) -> Tuple[bool, Optional[str], bool]:
@@ -1225,10 +1241,10 @@ class PicStyleCommand(PicCommandMixin):
                 ]
             )
 
-            await self.send_text("\n".join(lines))
+            await self.ctx.send.text("\n".join(lines), self._current_stream_id)
             return True, "帮助信息显示成功", True
 
         except Exception as e:
             logger.error(f"{self.log_prefix} 显示帮助失败: {e!r}")
-            await self.send_text(f"显示帮助信息失败：{str(e)[:100]}")
+            await self.ctx.send.text(f"显示帮助信息失败：{str(e)[:100]}", self._current_stream_id)
             return False, f"显示帮助失败: {str(e)}", True

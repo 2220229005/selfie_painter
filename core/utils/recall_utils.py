@@ -7,6 +7,7 @@
 """
 
 import asyncio
+import json
 import time as time_module
 from typing import Callable, Awaitable, Any, Optional
 
@@ -258,11 +259,9 @@ async def _try_recall_message(
 
     for cmd in commands:
         try:
-            result = await send_command_fn(
-                command_name=cmd,
-                args={"message_id": str(message_id)},
-                storage_message=False,
-            )
+            # 新版 SDK：回调签名为 send_command_fn(command: str) -> Any
+            cmd_payload = cmd + " " + json.dumps({"message_id": str(message_id)})
+            result = await send_command_fn(cmd_payload)
             if isinstance(result, bool) and result:
                 logger.info(
                     f"{log_prefix} 撤回成功，命令: {cmd}，消息ID: {message_id}"
