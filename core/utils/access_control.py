@@ -55,6 +55,57 @@ def build_target_context_id(target_id: object, scope: str) -> str:
     return normalize_context_id(f"qq:{normalized_target_id}:{scope}")
 
 
+def _build_context_id(platform: str, group_id: str, user_id: str) -> str:
+    """用宿主直传的 platform/group_id/user_id 构造规范上下文 ID。
+
+    Args:
+        platform: 平台名（如 qq）。
+        group_id: 群号（群聊时）。
+        user_id: 用户号（私聊时）。
+    Returns:
+        规范上下文 ID，格式 ``platform:id:scope``；信息不足时返回空字符串。
+    """
+    p = str(platform or "").strip()
+    g = str(group_id or "").strip()
+    u = str(user_id or "").strip()
+    if not p:
+        return ""
+    if g:
+        return normalize_context_id(f"{p}:{g}:group")
+    if u:
+        return normalize_context_id(f"{p}:{u}:private")
+    return ""
+
+
+def extract_context_id_from_action_message(message: object) -> str:
+    """从 Action 消息对象提取规范上下文 ID（兼容新 SDK 与旧字段）。
+
+    新 SDK 消息可能包含 ``chat_info`` / ``user_info``；旧字段为 ``chat_stream``。
+    """
+    if not message:
+        return ""
+    try:
+        # 新 SDK：chat_info.group_info.group_id
+        chat_info = getattr(message, "chat_info", None)
+        user_info = getattr(message, "user_info", None)
+        platform = str(getattr(message, "platform", "") or "").strip()
+        if chat_info:
+            platform = platform or str(getattr(chat_info, "platform", "") or "").strip()
+            group_info = getattr(chat_info, "group_info", None)
+            if group_info:
+                gid = getattr(group_info, "group_id", None)
+                if gid and platform:
+                    return normalize_context_id(f"{platform}:{gid}:group")
+        if user_info:
+            uid = getattr(user_info, "user_id", None)
+            if uid and platform:
+                return normalize_context_id(f"{platform}:{uid}:private")
+        # 旧字段：chat_stream
+        return extract_context_id_from_chat_stream(getattr(message, "chat_stream", None))
+    except Exception:
+        return ""
+
+
 def extract_context_id_from_chat_stream(chat_stream: object) -> str:
     """从 ChatStream 对象提取规范化的上下文 ID。
 

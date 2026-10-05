@@ -28,6 +28,7 @@ from .plugin_meta import (
 )
 from .plugin_schema import CONFIG_LAYOUT, CONFIG_SCHEMA, CONFIG_SECTION_DESCRIPTIONS, MODEL_FIELD_TEMPLATE
 from .plugin_config_model import SelfiePainterConfig
+from .core.utils.cache_manager import CacheManager
 from .plugin_runtime import PluginRuntimeMixin
 from .core.schedule_inject_handler import ScheduleInjectMixin
 from .core.schedule_command import ScheduleCommandMixin
@@ -401,6 +402,11 @@ class SelfiePainterV2Plugin(MaiBotPlugin, PluginRuntimeMixin, ScheduleInjectMixi
         super().__init__()
         self._config_bridge = PluginConfigBridge()
         self._initialize_runtime_state()
+        # 各 mixin 的实例属性显式初始化（MaiBotPlugin.__init__ 不接力调用 super().__init__，
+        # 故 MRO 后段 mixin 的 __init__ 不会执行，这里显式补齐）。
+        self._image_processor = None  # PicCommandMixin.image_processor property 惰性用
+        self.cache_manager = CacheManager(self)
+        self._api_clients = {}
 
     # ── 配置读取（兼容旧版 self.get_config）────────────────
     def get_config(self, key: str, default: Any = None) -> Any:

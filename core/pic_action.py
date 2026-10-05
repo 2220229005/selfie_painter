@@ -28,6 +28,8 @@ from .utils import (
     get_selfie_style_display_name,
     is_chat_allowed_for_model,
     extract_context_id_from_chat_stream,
+    extract_context_id_from_action_message,
+    _build_context_id,
 )
 
 
@@ -39,11 +41,25 @@ class SelfiePainterActionMixin:
     _current_stream_id: str = ""
     _current_message: Any = None
     _current_action_data: Dict[str, Any] = {}
+    _current_context_id: str = ""
 
-    def _bind_action_context(self, stream_id: str, action_data: Dict[str, Any], message: Any) -> None:
+    def _bind_action_context(
+        self,
+        stream_id: str,
+        action_data: Dict[str, Any],
+        message: Any,
+        platform: str = "",
+        group_id: str = "",
+        user_id: str = "",
+    ) -> None:
         self._current_stream_id = stream_id
         self._current_action_data = action_data or {}
         self._current_message = message
+        # 优先使用宿主直传的 platform/group_id/user_id 构造规范上下文 ID（新 SDK 推荐方式）
+        self._current_context_id = _build_context_id(platform, group_id, user_id)
+        if not self._current_context_id:
+            # 回退：从消息对象提取
+            self._current_context_id = extract_context_id_from_action_message(message)
 
     def _get_current_chat_stream(self) -> Any:
         msg = self._current_message
@@ -51,6 +67,8 @@ class SelfiePainterActionMixin:
 
     def _get_runtime_state_id(self) -> str:
         """获取运行状态键；优先使用 stream_id，回退解析 chat_stream，均不可用时返回空串。"""
+        if self._current_context_id:
+            return self._current_context_id
         if self._current_stream_id:
             return self._current_stream_id
         chat_stream = self._get_current_chat_stream()
@@ -65,12 +83,12 @@ class SelfiePainterActionMixin:
         return context_id
 
     def __init__(self, *args, **kwargs):
-        super().__init__()
-        self.image_processor = ImageProcessor(self)
+        # 注意：image_processor 由 PicCommandMixin 以 property 提供（惰性创建），
+        # 此处不再赋值，避免与 property 冲突（MRO 混入后的历史遗留问题）。
         self.cache_manager = CacheManager(self)
         self._api_clients = {}
 
-    async def _optimize_generation_prompt(
+    async def _optimize_action_prompt(
         self,
         description: str,
         model_id: str,
@@ -114,7 +132,17 @@ class SelfiePainterActionMixin:
         message = kwargs.get("message") or kwargs.get("action_message")
         if not isinstance(action_data, dict):
             action_data = {}
-        self._bind_action_context(stream_id, action_data, message)
+        platform = str(kwargs.get("platform", "") or "").strip()
+        group_id = str(kwargs.get("group_id", "") or "").strip()
+        user_id = str(kwargs.get("user_id", "") or "").strip()
+        self._bind_action_context(
+            stream_id,
+            action_data,
+            message,
+            platform=platform,
+            group_id=group_id,
+            user_id=user_id,
+        )
         logger.info("%s exec draw action", self.log_prefix)
         try:
             startup_handler = getattr(self, "try_start_auto_selfie", None)
@@ -179,7 +207,7 @@ class SelfiePainterActionMixin:
         actual_model_name = model_config.get("model", "")
 
         # 从 ChatStream 提取规范化的上下文 ID 用于访问控制检查
-        context_id = extract_context_id_from_chat_stream(self._get_current_chat_stream())
+        context_id = self._current_context_id or extract_context_id_from_chat_stream(self._get_current_chat_stream())
         if not context_id:
             # 提取失败时拒绝访问，不回退到不兼容的哈希格式
             logger.error(f"{self.log_prefix} 无法从聊天流提取规范化上下文 ID，拒绝访问")
@@ -262,7 +290,7 @@ class SelfiePainterActionMixin:
                 description, selfie_style, free_hand_action, model_id, activity_scene
             )
             if optimizer_enabled:
-                description = await self._optimize_generation_prompt(
+                description = await self._optimize_action_prompt(
                     description,
                     model_id,
                     scene_only=False,
@@ -298,7 +326,7 @@ class SelfiePainterActionMixin:
         extra_neg = selfie_negative_prompt if selfie_mode else None
 
         if optimizer_enabled and not selfie_mode:
-            description = await self._optimize_generation_prompt(description, model_id, scene_only=False)
+            description = await self._optimize_action_prompt(description, model_id, scene_only=False)
 
         # **智能检测：判断是文生图还是图生图**
         input_image_base64 = await self.image_processor.get_recent_image()

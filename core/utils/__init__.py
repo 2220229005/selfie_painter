@@ -39,6 +39,8 @@ from .access_control import (
     describe_access_rule,
     is_chat_allowed_for_model,
     extract_context_id_from_chat_stream,
+    extract_context_id_from_action_message,
+    _build_context_id,
 )
 
 __all__ = [
@@ -73,6 +75,8 @@ __all__ = [
     "describe_access_rule",
     "is_chat_allowed_for_model",
     "extract_context_id_from_chat_stream",
+    "extract_context_id_from_action_message",
+    "_build_context_id",
     "normalize_prompt_optimizer_mode",
     "normalize_prompt_optimizer_override",
     "resolve_effective_prompt_optimizer_mode",
