@@ -177,9 +177,9 @@ async def generate_image_standalone(
     Returns:
         (success, image_data): success 为 True 时 image_data 是 base64 或 URL
     """
-    from src.common.logger import get_logger
+    import logging
     from ..utils import merge_negative_prompt
-    _logger = get_logger("mais_art.standalone")
+    _logger = logging.getLogger("mais_art.standalone")
 
     # 合并负面提示词
     merged_config = merge_negative_prompt(model_config, negative_prompt) if negative_prompt else model_config

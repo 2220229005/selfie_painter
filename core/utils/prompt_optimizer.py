@@ -11,10 +11,10 @@ from typing import Optional, Tuple
 
 import aiohttp
 
-from src.common.logger import get_logger
-from src.plugin_system.apis import llm_api
+import logging
+from maibot_sdk.compat.apis import llm_api
 
-logger = get_logger("mais_art.optimizer")
+logger = logging.getLogger("mais_art.optimizer")
 
 # NAI 格式生成器提示词
 NAI_GENERATOR_SYSTEM_PROMPT = """You are a professional NovelAI (NAI) prompt engineer. Convert all input information into a flat, comma-separated English tag stream suitable for direct use with NAI image generation.

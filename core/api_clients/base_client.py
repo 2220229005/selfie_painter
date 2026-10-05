@@ -2,9 +2,9 @@
 
 import asyncio
 from typing import Dict, Any, Tuple, Optional
-from src.common.logger import get_logger
+import logging
 
-logger = get_logger("mais_art.api")
+logger = logging.getLogger("mais_art.api")
 
 
 class NonRetryableError(Exception):

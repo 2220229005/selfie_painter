@@ -10,11 +10,11 @@ import html
 import re
 from typing import Tuple, Callable
 
-from src.common.logger import get_logger
+import logging
 
 from .shared_constants import BASE64_IMAGE_PREFIXES
 
-logger = get_logger("mais_art.image_send")
+logger = logging.getLogger("mais_art.image_send")
 
 _MARKDOWN_IMAGE_PATTERN = re.compile(
     r"!\[[^\]]*\]\(\s*<?(https?://[^\s>]+?)>?\s*\)",

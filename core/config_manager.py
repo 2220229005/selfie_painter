@@ -13,10 +13,10 @@ from typing import Dict, Any, Optional
 import toml
 import json
 
-from src.common.logger import get_logger
+import logging
 
 
-logger = get_logger("selfie_painter_v2.config_manager")
+logger = logging.getLogger("selfie_painter_v2.config_manager")
 
 
 class EnhancedConfigManager:

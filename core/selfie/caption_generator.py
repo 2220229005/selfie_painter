@@ -10,12 +10,12 @@
 import datetime
 import random
 
-from src.common.logger import get_logger
-from src.plugin_system.apis import llm_api, config_api
+import logging
+from maibot_sdk.compat.apis import llm_api, config_api
 
 from .schedule_provider import ActivityInfo
 
-logger = get_logger("auto_selfie.caption")
+logger = logging.getLogger("auto_selfie.caption")
 
 
 def _get_reply_style() -> str:

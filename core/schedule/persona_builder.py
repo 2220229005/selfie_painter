@@ -11,7 +11,7 @@
 
 from typing import Optional
 
-from src.plugin_system.apis import config_api
+from maibot_sdk.compat.apis import config_api
 
 
 class PersonaContextBuilder:

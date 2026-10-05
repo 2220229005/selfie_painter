@@ -3,9 +3,9 @@
 提供统一的图片尺寸解析、验证和转换功能，供各API客户端复用
 """
 from typing import Tuple, Optional, Dict
-from src.common.logger import get_logger
+import logging
 
-logger = get_logger("mais_art.size")
+logger = logging.getLogger("mais_art.size")
 
 # LLM 尺寸选择系统提示词
 SIZE_SELECTOR_SYSTEM_PROMPT = """You are an image size selector. Based on the image description, choose the most appropriate size.
@@ -49,7 +49,7 @@ async def select_size_with_llm(description: str, log_prefix: str = "") -> Option
         return None
 
     try:
-        from src.plugin_system.apis import llm_api
+        from maibot_sdk.compat.apis import llm_api
 
         # 获取可用模型
         models = llm_api.get_available_models()

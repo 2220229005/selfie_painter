@@ -12,10 +12,10 @@ try:
 except ImportError:
     _REQUESTS_AVAILABLE = False
 
-from src.common.logger import get_logger
+import logging
 from maim_message import Seg
 
-logger = get_logger("mais_art.image")
+logger = logging.getLogger("mais_art.image")
 
 
 class ImageProcessor:
@@ -58,7 +58,7 @@ class ImageProcessor:
                     return emoji_base64_list[0]
 
             # 方法2：从 processed_plain_text 提取 picid，查 Images 数据库读文件
-            from src.common.database.database_model import Images
+            from maibot_sdk.compat.apis import database_api
 
             text = self._get_processed_plain_text()
             picid = None
@@ -70,7 +70,12 @@ class ImageProcessor:
 
             if picid:
                 logger.info(f"{self.log_prefix} 尝试通过 picid 获取图片路径: {picid}")
-                image = Images.get_or_none(Images.image_id == picid)
+                image = await database_api.db_query(
+                    "Images",
+                    filters={"image_id": picid},
+                    query_type="get",
+                    single_result=True,
+                )
 
                 if image and hasattr(image, 'path') and image.path:
                     image_path = image.path

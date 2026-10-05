@@ -10,9 +10,9 @@
 import time
 from typing import Dict, Any, Optional, Set
 from dataclasses import dataclass, field
-from src.common.logger import get_logger
+import logging
 
-logger = get_logger("mais_art.state")
+logger = logging.getLogger("mais_art.state")
 
 # 聊天流状态在无访问后保留的最大时长（秒），默认 24 小时
 _STATE_TTL_SECONDS = 24 * 60 * 60

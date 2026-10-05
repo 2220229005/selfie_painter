@@ -2,9 +2,9 @@ from typing import Optional, Dict, Any
 import asyncio
 import hashlib
 
-from src.common.logger import get_logger
+import logging
 
-logger = get_logger("mais_art.cache")
+logger = logging.getLogger("mais_art.cache")
 
 class CacheManager:
     """缓存管理器

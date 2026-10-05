@@ -23,7 +23,7 @@ import os
 import time
 from typing import Any, Callable, Optional
 
-from src.common.logger import get_logger  # pyright: ignore[reportMissingImports]
+import logging
 
 from .schedule_provider import get_schedule_provider
 from .scene_action_generator import convert_to_selfie_prompt, get_negative_prompt_for_style
@@ -39,7 +39,7 @@ from ..utils import (
     resolve_effective_prompt_optimizer_mode,
 )
 
-logger = get_logger("auto_selfie.task")
+logger = logging.getLogger("auto_selfie.task")
 
 
 def _safe_bool(value: Any, default: bool) -> bool:
@@ -584,8 +584,8 @@ class AutoSelfieTask:
             try:
                 qzone_module = import_module("plugins.Maizone.qzone")
                 helpers_module = import_module("plugins.Maizone.helpers")
-                plugin_core_module = import_module("src.plugin_system.core")
-                plugin_apis_module = import_module("src.plugin_system.apis")
+                plugin_core_module = import_module("maibot_sdk.compat.core")
+                plugin_apis_module = import_module("maibot_sdk.compat.apis")
 
                 create_qzone_api = qzone_module.create_qzone_api
                 get_napcat_config_and_renew = helpers_module.get_napcat_config_and_renew
@@ -642,8 +642,8 @@ class AutoSelfieTask:
                 except Exception as e:
                     logger.warning(f"[SelfiePainterV2] 加载历史聊天流失败（仅使用内存中的活跃流）: {e}")
 
-                plugin_system_module = import_module("src.plugin_system")
-                plugin_apis_module = import_module("src.plugin_system.apis")
+                plugin_system_module = import_module("maibot_sdk.compat.apis")
+                plugin_apis_module = import_module("maibot_sdk.compat.apis")
                 chat_api = plugin_system_module.chat_api
                 send_api = plugin_apis_module.send_api
                 import base64

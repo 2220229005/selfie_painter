@@ -9,9 +9,9 @@ from __future__ import annotations
 from collections.abc import Callable
 from typing import Any
 
-from src.common.logger import get_logger
+import logging
 
-logger = get_logger("mais_art.wardrobe")
+logger = logging.getLogger("mais_art.wardrobe")
 
 # 预定义的中文穿搭 → 英文 SD 标签映射
 # 命中本地映射可跳过 LLM 调用，既省 token 又保证稳定输出

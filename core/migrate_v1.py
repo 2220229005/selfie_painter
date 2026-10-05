@@ -16,9 +16,9 @@ from __future__ import annotations
 import re
 from typing import Any, Dict, List, Optional, Tuple
 
-from src.common.logger import get_logger
+import logging
 
-logger = get_logger("selfie_painter_v2.migrate_v1")
+logger = logging.getLogger("selfie_painter_v2.migrate_v1")
 
 # ────────────────────────────────────────────────────────────────
 # 检测

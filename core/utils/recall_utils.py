@@ -11,9 +11,9 @@ import json
 import time as time_module
 from typing import Callable, Awaitable, Any, Optional
 
-from src.common.logger import get_logger
+import logging
 
-logger = get_logger("mais_art.recall")
+logger = logging.getLogger("mais_art.recall")
 
 # ==================== 消息匹配工具 ====================
 
@@ -112,10 +112,9 @@ async def _find_bot_image_message_id(
     Returns:
         消息 ID 字符串，找不到返回 None
     """
-    from src.plugin_system.apis import message_api
-    from src.config.config import global_config
+    from maibot_sdk.compat.apis import config_api, message_api
 
-    bot_id = str(global_config.bot.qq_account)
+    bot_id = str(config_api.get_global_config("bot.qq_account", ""))
     placeholder_id = None
 
     for attempt in range(poll_attempts):

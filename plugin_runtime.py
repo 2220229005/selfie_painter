@@ -5,9 +5,9 @@ from __future__ import annotations
 import asyncio
 from typing import Any
 
-from src.common.logger import get_logger
+import logging
 
-logger = get_logger("selfie_painter_v2")
+logger = logging.getLogger("selfie_painter_v2")
 
 
 class PluginRuntimeMixin:

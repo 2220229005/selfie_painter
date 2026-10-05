@@ -35,7 +35,7 @@ class ScheduleDB:
         plugin_root: str | None = None
 
         try:
-            plugin_manage_api = importlib.import_module("src.plugin_system.apis.plugin_manage_api")
+            plugin_manage_api = importlib.import_module("maibot_sdk.compat.apis.plugin_manage_api")
             get_plugin_path = getattr(plugin_manage_api, "get_plugin_path", None)
             if callable(get_plugin_path):
                 plugin_root = str(get_plugin_path("selfie_painter_v2"))

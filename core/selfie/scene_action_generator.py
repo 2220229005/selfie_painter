@@ -12,12 +12,12 @@ import json
 import re
 from typing import Dict, List, Optional
 
-from src.common.logger import get_logger
+import logging
 
 from .schedule_provider import ActivityInfo
 from ..utils import SELFIE_HAND_NEGATIVE, ANTI_DUAL_PHONE_PROMPT, ANTI_CAMERA_DEVICE_PROMPT, ANTI_MIRROR_PORTAL_PROMPT
 
-logger = get_logger("auto_selfie.scene")
+logger = logging.getLogger("auto_selfie.scene")
 
 
 # ==================== 确定性映射（手动自拍 + LLM 兜底） ====================
@@ -148,7 +148,7 @@ async def generate_scene_with_llm(
         包含 action, environment, expression, lighting 的字典，失败返回 None
     """
     try:
-        from src.plugin_system.apis import llm_api
+        from maibot_sdk.compat.apis import llm_api
 
         models = llm_api.get_available_models()
         model = models.get(model_id)
@@ -228,7 +228,7 @@ async def generate_hand_action_with_llm(
         英文手部动作标签字符串，失败返回 None
     """
     try:
-        from src.plugin_system.apis import llm_api
+        from maibot_sdk.compat.apis import llm_api
 
         models = llm_api.get_available_models()
         model = models.get(model_id)

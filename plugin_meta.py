@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import List
 
-from src.plugin_system.base.component_types import PythonDependency
+from maibot_sdk.compat.base.component_types import PythonDependency
 
 PLUGIN_NAME = "selfie_painter_v2"
 PLUGIN_VERSION = "3.6.13"

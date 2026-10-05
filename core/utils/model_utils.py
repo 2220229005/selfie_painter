@@ -4,9 +4,9 @@
 消除 pic_action / pic_command / auto_selfie_task / api_clients 中的重复逻辑。
 """
 from typing import Dict, Any, Optional, Callable
-from src.common.logger import get_logger
+import logging
 
-logger = get_logger("mais_art.model_utils")
+logger = logging.getLogger("mais_art.model_utils")
 
 
 def get_model_config(

@@ -183,7 +183,7 @@ async def _generate_once(
         tuple: (日程项列表, 警告列表)
     """
     try:
-        llm_api = importlib.import_module("src.plugin_system.apis.llm_api")
+        llm_api = importlib.import_module("maibot_sdk.compat.apis.llm_api")
     except Exception:
         logger.warning("[ScheduleLLM] 无法导入 llm_api")
         return [], ["无法导入 llm_api"]
@@ -278,7 +278,7 @@ async def generate_schedule_via_llm(
     personality = "是一个女大学生"
 
     try:
-        from src.plugin_system.apis import config_api
+        from maibot_sdk.compat.apis import config_api
 
         nickname = config_api.get_global_config("bot.nickname", "麦麦")
         personality = config_api.get_global_config("personality.personality", "是一个女大学生")

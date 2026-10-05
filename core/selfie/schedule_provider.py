@@ -8,11 +8,11 @@
 
 import datetime
 
-from src.common.logger import get_logger
+import logging
 
 from ..schedule.schedule_models import ActivityInfo, ActivityType
 
-logger = get_logger("auto_selfie.schedule")
+logger = logging.getLogger("auto_selfie.schedule")
 
 
 class ScheduleProvider:

@@ -5,7 +5,7 @@ from __future__ import annotations
 import copy
 from typing import Any, Dict
 
-from src.plugin_system.base.config_types import (
+from maibot_sdk.compat.base.config_types import (
     ConfigField,
     ConfigSection,
     ConfigLayout,

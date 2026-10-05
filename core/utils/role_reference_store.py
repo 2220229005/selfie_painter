@@ -13,13 +13,11 @@ from typing import Any, Callable, Dict, List, Optional, Tuple
 
 import aiohttp
 
-from src.common.logger import get_logger
-from src.config.config import model_config as maibot_model_config
-from src.llm_models.utils_model import LLMRequest
+import logging
 
 from ..image_search_adapter import ImageSearchAdapter
 
-logger = get_logger("mais_art.role_reference")
+logger = logging.getLogger("mais_art.role_reference")
 
 
 class _ConfigProxy:
@@ -304,31 +302,33 @@ class RoleReferenceStore:
             )
         )
 
-        vlm_request = LLMRequest(
-            model_set=maibot_model_config.model_task_config.vlm,
-            request_type="plugin.role_reference.vlm",
-        )
-        features: List[str] = []
+        from maibot_sdk.compat._context_holder import get_context
 
+        ctx = get_context()
+        if ctx is None:
+            logger.warning("VLM skip: no plugin context")
+            return ""
+        features: List[str] = []
         for image_path in image_paths[:3]:
             try:
                 with open(image_path, "rb") as f:
                     image_bytes = f.read()
                 image_base64 = base64.b64encode(image_bytes).decode("utf-8")
-                content, _ = await vlm_request.generate_response_for_image(
-                    prompt=prompt,
-                    image_base64=image_base64,
-                    image_format="jpeg",
+                result = await ctx.llm.generate(
+                    prompt=[
+                        {"type": "text", "text": prompt},
+                        {"type": "image_url", "image_url": {"url": "data:image/jpeg;base64," + image_base64}},
+                    ],
+                    task_name="vlm",
                     max_tokens=220,
                 )
-                text = str(content).strip().replace("\n", " ")
-                text = re.sub(r"\s+", "", text)
+                content = result.get("response", "") if isinstance(result, dict) else str(result)
+                text = str(content).strip().replace("\\n", " ")
+                text = re.sub(r"\\s+", "", text)
                 if text:
                     features.append(text)
             except Exception as e:
-                logger.warning(f"VLM提取参考图特征失败: {e}")
-
-        if not features:
+                logger.warning(f"VLM extract failed: {e}")
             return ""
 
         merged = "；".join(features)
