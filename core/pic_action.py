@@ -50,10 +50,18 @@ class SelfiePainterActionMixin:
         return getattr(msg, "chat_stream", None) if msg is not None else None
 
     def _get_runtime_state_id(self) -> str:
+        """获取运行状态键；优先使用 stream_id，回退解析 chat_stream，均不可用时返回空串。"""
+        if self._current_stream_id:
+            return self._current_stream_id
         chat_stream = self._get_current_chat_stream()
-        context_id = extract_context_id_from_chat_stream(chat_stream)
+        try:
+            context_id = extract_context_id_from_chat_stream(chat_stream)
+        except Exception as exc:
+            logger.warning("解析会话标识失败，运行状态降级为空键: %s", exc)
+            context_id = None
         if not context_id:
-            raise ValueError("no session id")
+            logger.warning("无法获取会话标识，运行状态降级为空键（部分按会话的功能将失效）")
+            return ""
         return context_id
 
     def __init__(self, *args, **kwargs):
