@@ -406,10 +406,23 @@ class SelfiePainterV2Plugin(MaiBotPlugin, PluginRuntimeMixin, ScheduleInjectMixi
         return self._config_bridge.get(key, default)
 
     async def _reload_config(self) -> None:
-        """从 ctx.config.get_plugin() 拉取整份配置并缓存。"""
+        """从 ctx.config.get_plugin() 拉取整份配置并缓存；ctx 不可用时回退读本地 config.toml。"""
         import os
+
         plugin_dir = os.path.dirname(os.path.abspath(__file__))
-        await self._config_bridge.load_from_ctx(self.ctx, plugin_dir, CONFIG_FILE_NAME)
+        ctx = None
+        try:
+            ctx = self.ctx
+        except Exception as exc:  # 上下文尚未注入（如独立测试）
+            logger.warning("读取插件上下文失败，回退到本地 config.toml: %s", exc)
+        if ctx is None:
+            self._config_bridge.load_from_toml(plugin_dir, CONFIG_FILE_NAME)
+            return
+        try:
+            await self._config_bridge.load_from_ctx(ctx, plugin_dir, CONFIG_FILE_NAME)
+        except Exception as exc:
+            logger.warning("通过 ctx 读取插件配置失败，回退到本地 config.toml: %s", exc)
+            self._config_bridge.load_from_toml(plugin_dir, CONFIG_FILE_NAME)
 
     # ── 生命周期 ──────────────────────────────────────────────
     async def on_load(self) -> None:
