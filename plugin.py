@@ -27,6 +27,7 @@ from .plugin_meta import (
     PYTHON_DEPENDENCIES,
 )
 from .plugin_schema import CONFIG_LAYOUT, CONFIG_SCHEMA, CONFIG_SECTION_DESCRIPTIONS, MODEL_FIELD_TEMPLATE
+from .plugin_config_model import SelfiePainterConfig
 from .plugin_runtime import PluginRuntimeMixin
 from .core.schedule_inject_handler import ScheduleInjectMixin
 from .core.schedule_command import ScheduleCommandMixin
@@ -60,6 +61,7 @@ class SelfiePainterV2Plugin(MaiBotPlugin, PluginRuntimeMixin, ScheduleInjectMixi
     config_section_descriptions = CONFIG_SECTION_DESCRIPTIONS
     config_layout = CONFIG_LAYOUT
     config_schema = CONFIG_SCHEMA
+    config_model = SelfiePainterConfig
     _MODEL_FIELD_TEMPLATE: Dict[str, Any] = MODEL_FIELD_TEMPLATE
 
     def _inject_dynamic_config_layout(self, raw_config: dict[str, Any] | None) -> None:
