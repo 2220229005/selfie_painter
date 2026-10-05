@@ -9,9 +9,7 @@ from src.plugin_system.base.component_types import ComponentInfo
 from .core.pic_action import SelfiePainterAction
 from .core.pic_command import PicConfigCommand, PicGenerationCommand, PicStyleCommand
 from .core.schedule_command import ScheduleCommand
-from .core.schedule_inject_handler import ScheduleInjectHandler, ScheduleContextHandler
 from .core.wardrobe_command import WardrobeCommand
-from .core.lifecycle_handler import LifecycleStartHandler, LifecycleStopHandler
 
 
 def build_plugin_components(plugin: Any) -> List[Tuple[ComponentInfo, Type[Any]]]:
@@ -21,10 +19,6 @@ def build_plugin_components(plugin: Any) -> List[Tuple[ComponentInfo, Type[Any]]
     enable_pic_config = plugin.get_config("components.enable_pic_config", True)
     enable_pic_style = plugin.get_config("components.enable_pic_style", True)
     components: List[Tuple[ComponentInfo, Type[Any]]] = []
-
-    # 生命周期事件处理器（优先注册，确保启动和停止逻辑正确执行）
-    components.append((LifecycleStartHandler.get_handler_info(), LifecycleStartHandler))
-    components.append((LifecycleStopHandler.get_handler_info(), LifecycleStopHandler))
 
     if enable_unified_generation:
         components.append((SelfiePainterAction.get_action_info(), SelfiePainterAction))
@@ -40,9 +34,6 @@ def build_plugin_components(plugin: Any) -> List[Tuple[ComponentInfo, Type[Any]]
         components.append((PicGenerationCommand.get_command_info(), PicGenerationCommand))
 
     components.append((ScheduleCommand.get_command_info(), ScheduleCommand))
-    if plugin.get_config("schedule_inject.enabled", True):
-        components.append((ScheduleContextHandler.get_handler_info(), ScheduleContextHandler))
-        components.append((ScheduleInjectHandler.get_handler_info(), ScheduleInjectHandler))
 
     return components
 

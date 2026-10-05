@@ -36,3 +36,6 @@ WARDROBE_REFACTOR_PLAN.md
 # 运行时数据目录（保留 .gitkeep）
 data/*
 !data/.gitkeep
+# 迁移过程中的临时备份文件
+*.bak-*
+*.bak

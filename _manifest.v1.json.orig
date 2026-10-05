@@ -1,0 +1,94 @@
+{
+  "manifest_version": 1,
+  "name": "画家麦麦的自拍日常",
+  "version": "3.6.13",
+  "description": "集智能绘画与自拍生成于一体的 MaiBot 插件。支持文生图/图生图自动识别，兼容 OpenAI、OpenAI-Chat、豆包、Gemini、魔搭、ComfyUI 等多种 API 格式。内置日程系统、衣柜系统、三种自拍模式（standard/mirror/photo）、SSE 流式响应支持。提供命令式风格转换、模型配置管理、结果缓存、提示词优化、智能参考搜索等高级特性。",
+  "author": {
+    "name": "Ptrel，Rabbit-Jia-Er，saberlights Kiuon，nguspring",
+    "url": "https://github.com/nguspring/selfie_painter"
+  },
+  "license": "AGPL-3.0",
+  "host_application": {
+    "min_version": "0.10.0"
+  },
+  "homepage_url": "https://github.com/nguspring/selfie_painter",
+  "repository_url": "https://github.com/nguspring/selfie_painter",
+  "keywords": [
+    "画图",
+    "自拍",
+    "日程",
+    "配文",
+    "AI",
+    "图片",
+    "魔搭",
+    "文生图",
+    "图生图",
+    "人设",
+    "ComfyUI",
+    "衣柜"
+  ],
+  "categories": [
+    "Content Generation",
+    "Entertainment & Interaction"
+  ],
+  "default_locale": "zh-CN",
+  "plugin_info": {
+    "is_built_in": false,
+    "plugin_type": "image_generator",
+    "components": [
+      {
+        "type": "action",
+        "name": "draw_picture",
+        "description": "智能图片生成，自动识别文生图/图生图",
+        "activation_modes": [
+          "keyword",
+          "llm_judge"
+        ],
+        "keywords": [
+          "画",
+          "绘制",
+          "生成图片",
+          "画图",
+          "图生图",
+          "修改图片",
+          "风格转换"
+        ]
+      },
+      {
+        "type": "command",
+        "name": "pic_generation_command",
+        "description": "风格化图生图命令：/dr <风格>",
+        "pattern": "/dr"
+      },
+      {
+        "type": "command",
+        "name": "pic_config_command",
+        "description": "模型配置管理：/dr list、/dr set等",
+        "pattern": "/dr"
+      },
+      {
+        "type": "command",
+        "name": "pic_style_command",
+        "description": "风格管理：/dr styles、/dr style等",
+        "pattern": "/dr"
+      }
+    ],
+    "features": [
+      "智能文生图/图生图识别",
+      "多API格式支持(OpenAI/OpenAI-Chat/豆包/Gemini/魔搭/ComfyUI)",
+      "命令式风格转换",
+      "动态模型配置管理",
+      "风格别名系统",
+      "结果缓存机制",
+      "调试开关控制",
+      "支持图生图开关",
+      "内置日程系统",
+      "衣柜系统",
+      "三种自拍模式(standard/mirror/photo)",
+      "SSE流式响应支持",
+      "智能参考搜索(内置Bing搜图)",
+      "独立生图接口(generate_image_standalone)"
+    ]
+  },
+  "id": "selfie_painter"
+}

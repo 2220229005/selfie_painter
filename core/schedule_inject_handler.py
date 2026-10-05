@@ -19,11 +19,7 @@ import time
 import logging
 from typing import Dict, Optional, Tuple
 
-from src.plugin_system.base.base_events_handler import BaseEventHandler
-from src.plugin_system.base.component_types import (
-    EventType,
-    CustomEventHandlerResult,
-)
+from typing import Any
 
 from .inject.context_cache import get_context_cache
 from .inject.intent_classifier import classify_intent, IntentType
@@ -37,15 +33,11 @@ _stream_throttle: Dict[str, float] = {}
 _stream_msg_count: Dict[str, int] = {}
 
 
-class ScheduleContextHandler(BaseEventHandler):
+class ScheduleInjectMixin:
     """在接收消息时记录用户上下文，供后续日程注入按会话查询。"""
 
-    event_type = EventType.ON_MESSAGE
-    handler_name = "selfie_schedule_context_handler"
-    handler_description = "记录日程对话上下文"
-    intercept_message = True
 
-    async def execute(self, message=None):
+    async def handle_schedule_context(self, message=None, **kwargs):
         """按消息的流 ID 保存非命令文本，返回宿主约定的五元组。"""
         if message is not None and message.stream_id and message.plain_text.strip():
             # 命令不属于自然对话，避免配置操作污染日程话题识别。
@@ -59,29 +51,11 @@ class ScheduleContextHandler(BaseEventHandler):
         return True, True, None, None, message
 
 
-class ScheduleInjectHandler(BaseEventHandler):
-    """
-    日程注入 EventHandler（增强版）
-
-    在 POST_LLM 阶段将麦麦当前活动信息注入到 LLM prompt 中，
-    让回复更贴合角色当前的"生活状态"。
-
-    增强功能：
-    - 意图识别：避免在技术问答等不相关场景注入
-    - 对话上下文：连续对话时保持理解
-    - 智能注入：根据分析结果优化注入策略
-    """
-
-    event_type = EventType.POST_LLM
-    handler_name: str = "selfie_schedule_inject_handler"
-    handler_description: str = "在 LLM 调用前注入麦麦当前日程信息（智能增强版）"
-    weight: int = 10
-    intercept_message: bool = True
-
-    async def execute(
+    async def handle_schedule_inject(
         self,
         message=None,
-    ) -> Tuple[bool, bool, Optional[str], Optional[CustomEventHandlerResult], Optional[object]]:
+        **kwargs,
+    ) -> Tuple[bool, bool, Optional[str], Optional[Any], Optional[object]]:
         """
         执行日程注入
 

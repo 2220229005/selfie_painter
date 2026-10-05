@@ -3,15 +3,18 @@
 # pyright: reportMissingImports=false
 # pyright: reportMissingTypeArgument=false
 
+import logging
 from typing import List, Tuple, Type, Dict, Any
 
-from src.common.logger import get_logger
-from src.plugin_system.base.base_plugin import BasePlugin
-from src.plugin_system.base.component_types import ComponentInfo, PythonDependency
-from src.plugin_system import register_plugin
-from src.plugin_system.base.config_types import ConfigField, ConfigSection
+from maibot_sdk import MaiBotPlugin
+from maibot_sdk import EventHandler
+from maibot_sdk.types import EventType
+# B1 过渡：动态布局注入仍使用旧配置类型，暂从 compat 兼容层获取
+from maibot_sdk.compat.base.config_types import ConfigField, ConfigSection
+
 from .plugin_components import build_plugin_components
 from .plugin_config_runtime import load_raw_config
+from .plugin_config_bridge import PluginConfigBridge
 from .plugin_meta import (
     CONFIG_FILE_NAME,
     DEPENDENCIES,
@@ -23,12 +26,12 @@ from .plugin_meta import (
 )
 from .plugin_schema import CONFIG_LAYOUT, CONFIG_SCHEMA, CONFIG_SECTION_DESCRIPTIONS, MODEL_FIELD_TEMPLATE
 from .plugin_runtime import PluginRuntimeMixin
+from .core.schedule_inject_handler import ScheduleInjectMixin
 
-logger = get_logger("selfie_painter_v2")
+logger = logging.getLogger("selfie_painter_v2")
 
 
-@register_plugin
-class SelfiePainterV2Plugin(PluginRuntimeMixin, BasePlugin):
+class SelfiePainterV2Plugin(MaiBotPlugin, PluginRuntimeMixin, ScheduleInjectMixin):
     """麦麦绘卷 v2 (selfie_painter_v2) - 智能多模型图片生成插件，支持文生图和图生图"""
 
     # 插件基本信息
@@ -37,7 +40,7 @@ class SelfiePainterV2Plugin(PluginRuntimeMixin, BasePlugin):
     plugin_author = PLUGIN_AUTHOR
     enable_plugin = ENABLE_PLUGIN
     dependencies: List[str] = DEPENDENCIES
-    python_dependencies: List[PythonDependency] = PYTHON_DEPENDENCIES
+    python_dependencies = PYTHON_DEPENDENCIES
     config_file_name = CONFIG_FILE_NAME
 
     # 配置元数据与 schema 定义
@@ -378,21 +381,74 @@ class SelfiePainterV2Plugin(PluginRuntimeMixin, BasePlugin):
             len(raw_config.get("styles", {})) if raw_config else 0,
         )
 
-    def __init__(self, plugin_dir: str):
-        """初始化插件
-
-        注意：后台任务不在构造函数中启动，而是在 ON_START 事件中启动。
-        这样可以避免禁用插件仍启动后台任务的问题（H5）。
-        """
-        original_config = load_raw_config(plugin_dir, self.config_file_name, logger)
-        # ── 动态注入：根据 config.toml 里的实际模型/风格，更新 WEBUI 布局 ──
-        self._inject_dynamic_config_layout(original_config)
-
-        # 先调用父类初始化，这会加载配置并可能触发 MaiBot 迁移
-        BasePlugin.__init__(self, plugin_dir)
+    def __init__(self) -> None:
+        """初始化插件实例（新版 SDK 无参构造）。"""
+        super().__init__()
+        self._config_bridge = PluginConfigBridge()
         self._initialize_runtime_state()
-        # 不在这里调用 _bootstrap_runtime_tasks()，改为在 ON_START 事件中调用
 
-    def get_plugin_components(self) -> List[Tuple[ComponentInfo, Type]]:
-        """返回插件包含的组件列表"""
+    # ── 配置读取（兼容旧版 self.get_config）────────────────
+    def get_config(self, key: str, default: Any = None) -> Any:
+        """点分键读取插件配置（同步，走本地缓存）。"""
+        return self._config_bridge.get(key, default)
+
+    async def _reload_config(self) -> None:
+        """从 ctx.config.get_plugin() 拉取整份配置并缓存。"""
+        import os
+        plugin_dir = os.path.dirname(os.path.abspath(__file__))
+        await self._config_bridge.load_from_ctx(self.ctx, plugin_dir, CONFIG_FILE_NAME)
+
+    # ── 生命周期 ──────────────────────────────────────────────
+    async def on_load(self) -> None:
+        """插件加载回调：预读配置并注入 WEBUI 动态布局。"""
+        await self._reload_config()
+        self._inject_dynamic_config_layout(self._config_bridge.raw)
+        try:
+            self._bootstrap_runtime_tasks()
+            logger.info("[SelfiePainterV2] 后台任务已启动")
+        except Exception as exc:
+            logger.error("[SelfiePainterV2] 启动后台任务失败: %s", exc, exc_info=True)
+        logger.info("selfie_painter_v2 已加载")
+
+    async def on_unload(self) -> None:
+        """插件卸载回调：停止后台任务。"""
+        try:
+            await self.on_plugin_unload()
+            logger.info("[SelfiePainterV2] 后台任务已停止")
+        except Exception as exc:
+            logger.error("[SelfiePainterV2] 停止后台任务失败: %s", exc, exc_info=True)
+        logger.info("selfie_painter_v2 已卸载")
+
+    async def on_config_update(self, new_config: dict, version: str) -> None:
+        """配置更新回调。"""
+        await self._reload_config()
+        logger.info("selfie_painter_v2 配置已更新: version=%s", version)
+
+    # ── EventHandler：日程上下文与注入 ──────────────────────
+    @EventHandler(
+        "selfie_schedule_context_handler",
+        description="记录日程对话上下文",
+        event_type=EventType.ON_MESSAGE,
+        intercept_message=True,
+    )
+    async def handle_schedule_context_event(self, message=None, **kwargs):
+        return await self.handle_schedule_context(message=message, **kwargs)
+
+    @EventHandler(
+        "selfie_schedule_inject_handler",
+        description="在 LLM 调用前注入麦麦当前日程信息（智能增强版）",
+        event_type=EventType.POST_LLM,
+        weight=10,
+        intercept_message=True,
+    )
+    async def handle_schedule_inject_event(self, message=None, **kwargs):
+        return await self.handle_schedule_inject(message=message, **kwargs)
+
+    def get_plugin_components(self) -> List[Tuple[Any, Type]]:
+        """返回插件包含的组件列表（B1 阶段暂时保留，B3 将改为装饰器）。"""
         return build_plugin_components(self)
+
+
+def create_plugin() -> SelfiePainterV2Plugin:
+    """新版 SDK 插件工厂函数。"""
+    return SelfiePainterV2Plugin()
