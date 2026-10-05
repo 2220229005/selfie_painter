@@ -7,9 +7,10 @@ import logging
 from typing import List, Tuple, Type, Dict, Any
 
 from maibot_sdk import MaiBotPlugin
+from maibot_sdk import Action
 from maibot_sdk import Command
 from maibot_sdk import EventHandler
-from maibot_sdk.types import EventType
+from maibot_sdk.types import ActivationType, EventType
 # B1 过渡：动态布局注入仍使用旧配置类型，暂从 compat 兼容层获取
 from maibot_sdk.compat.base.config_types import ConfigField, ConfigSection
 
@@ -31,11 +32,19 @@ from .core.schedule_inject_handler import ScheduleInjectMixin
 from .core.schedule_command import ScheduleCommandMixin
 from .core.wardrobe_command import WardrobeCommandMixin
 from .core.pic_command import PicCommandMixin, PicGenerationCommand, PicConfigCommand, PicStyleCommand
+from .core.pic_action import SelfiePainterActionMixin
+from .core._draw_action_meta import (
+    DRAW_PICTURE_ACTION_DESCRIPTION,
+    DRAW_PICTURE_ACTIVATION_KEYWORDS,
+    DRAW_PICTURE_ACTION_PARAMETERS,
+    DRAW_PICTURE_ACTION_REQUIRE,
+    DRAW_PICTURE_ASSOCIATED_TYPES,
+)
 
 logger = logging.getLogger("selfie_painter_v2")
 
 
-class SelfiePainterV2Plugin(MaiBotPlugin, PluginRuntimeMixin, ScheduleInjectMixin, ScheduleCommandMixin, WardrobeCommandMixin, PicGenerationCommand, PicConfigCommand, PicStyleCommand):
+class SelfiePainterV2Plugin(MaiBotPlugin, PluginRuntimeMixin, ScheduleInjectMixin, ScheduleCommandMixin, WardrobeCommandMixin, PicGenerationCommand, PicConfigCommand, PicStyleCommand, SelfiePainterActionMixin):
     """麦麦绘卷 v2 (selfie_painter_v2) - 智能多模型图片生成插件，支持文生图和图生图"""
 
     # 插件基本信息
@@ -492,6 +501,20 @@ class SelfiePainterV2Plugin(MaiBotPlugin, PluginRuntimeMixin, ScheduleInjectMixi
     )
     async def handle_pic_style_command(self, stream_id: str = "", user_id: str = "", matched_groups: dict | None = None, message: Any = None, **kwargs: Any):
         return await self.handle_pic_style(stream_id=stream_id, user_id=user_id, matched_groups=matched_groups, message=message, **kwargs)
+
+    # Action: draw_picture (unified image generation)
+    @Action(
+        "draw_picture",
+        description=DRAW_PICTURE_ACTION_DESCRIPTION,
+        activation_type=ActivationType.ALWAYS,
+        activation_keywords=DRAW_PICTURE_ACTIVATION_KEYWORDS,
+        action_parameters=DRAW_PICTURE_ACTION_PARAMETERS,
+        action_require=DRAW_PICTURE_ACTION_REQUIRE,
+        associated_types=DRAW_PICTURE_ASSOCIATED_TYPES,
+        parallel_action=True,
+    )
+    async def handle_draw_picture_action(self, stream_id: str = "", **kwargs: Any):
+        return await self.handle_draw_picture(stream_id=stream_id, **kwargs)
 
     def get_plugin_components(self) -> List[Tuple[Any, Type]]:
         """返回插件包含的组件列表（B1 阶段暂时保留，B3 将改为装饰器）。"""

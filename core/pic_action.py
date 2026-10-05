@@ -1,14 +1,10 @@
+import logging
+logger = logging.getLogger("mais_art.action")
 import base64
 import os
 import time as time_module
 from typing import Tuple, Optional, Dict, Any
 
-from src.plugin_system.base.base_action import BaseAction  # pyright: ignore[reportMissingImports]
-from src.plugin_system.base.component_types import (  # pyright: ignore[reportMissingImports]
-    ActionActivationType,
-    ChatMode,
-)
-from src.common.logger import get_logger  # pyright: ignore[reportMissingImports]
 
 from .api_clients import get_client_class
 from .utils import (
@@ -34,137 +30,37 @@ from .utils import (
     extract_context_id_from_chat_stream,
 )
 
-logger = get_logger("selfie_painter")
 
 
-class SelfiePainterAction(BaseAction):
-    """统一的图片生成动作，智能检测文生图或图生图"""
+class SelfiePainterActionMixin:
+    """Unified image generation action (SDK2 migrated)."""
 
-    # 激活设置
-    activation_type = ActionActivationType.ALWAYS  # 默认激活类型
-    focus_activation_type = ActionActivationType.ALWAYS  # Focus模式使用LLM判定，精确理解需求
-    normal_activation_type = ActionActivationType.KEYWORD  # Normal模式使用关键词激活，快速响应
-    mode_enable = ChatMode.ALL
-    parallel_action = True
+    log_prefix: str = "[SelfiePainter]"
+    _current_stream_id: str = ""
+    _current_message: Any = None
+    _current_action_data: Dict[str, Any] = {}
+
+    def _bind_action_context(self, stream_id: str, action_data: Dict[str, Any], message: Any) -> None:
+        self._current_stream_id = stream_id
+        self._current_action_data = action_data or {}
+        self._current_message = message
+
+    def _get_current_chat_stream(self) -> Any:
+        msg = self._current_message
+        return getattr(msg, "chat_stream", None) if msg is not None else None
 
     def _get_runtime_state_id(self) -> str:
-        """返回与命令组件一致的状态键；无法识别会话时明确报错。"""
-        context_id = extract_context_id_from_chat_stream(self.chat_stream)
+        chat_stream = self._get_current_chat_stream()
+        context_id = extract_context_id_from_chat_stream(chat_stream)
         if not context_id:
-            raise ValueError("无法获取运行状态的会话标识")
+            raise ValueError("no session id")
         return context_id
 
-    # 动作基本信息
-    action_name = "draw_picture"
-    action_description = (
-        "智能图片生成：根据描述生成图片（文生图）或基于现有图片进行修改（图生图）。"
-        "自动检测用户是否提供了输入图片来决定使用文生图还是图生图模式。"
-        "支持多种API格式：OpenAI、豆包、Gemini、硅基流动、魔搭社区、砂糖云(NovelAI)、ComfyUI、梦羽AI等。"
-    )
-
-    # 关键词设置（用于Normal模式）
-    activation_keywords = [
-        # 文生图关键词
-        "画",
-        "绘制",
-        "生成图片",
-        "画图",
-        "draw",
-        "paint",
-        "图片生成",
-        "创作",
-        # 图生图关键词
-        "图生图",
-        "修改图片",
-        "基于这张图",
-        "img2img",
-        "重画",
-        "改图",
-        "图片修改",
-        "改成",
-        "换成",
-        "变成",
-        "转换成",
-        "风格",
-        "画风",
-        "改风格",
-        "换风格",
-        "这张图",
-        "这个图",
-        "图片风格",
-        "改画风",
-        "重新画",
-        "再画",
-        "重做",
-        # 自拍关键词
-        "自拍",
-        "selfie",
-        "拍照",
-        "对镜自拍",
-        "镜子自拍",
-        "照镜子",
-    ]
-
-    # LLM判定提示词（用于Focus模式）
-    ALWAYS_prompt = """
-判定是否需要使用图片生成动作的条件：
-
-**核心原则：只有在用户明确对你提出画图请求时才使用。在群聊中，必须是用户@你或点名叫你来画图。**
-
-**文生图场景：**
-1. 用户明确@你的名字或叫你的名字，要求画图、生成图片或创作图像
-2. 用户在私聊中直接要求你画某个内容
-
-**图生图场景：**
-1. 用户发送了图片并@你的名字，要求基于该图片进行修改或重新生成
-2. 用户明确@你并提到"图生图"、"修改图片"、"基于这张图"等关键词
-
-**自拍场景：**
-1. 用户明确@你或叫你的名字，要求你自拍、拍照
-2. 用户在私聊中要求你自拍
-
-**绝对不要使用的情况：**
-1. 群聊中用户没有@你或叫你的名字，即使消息内容涉及画图
-2. 其他机器人的命令（如/nai、/sd、/mj等），这些是发给其他机器人的，不是对你的请求
-3. 用户只是在描述场景或事物，并没有要求你画图
-4. 纯文字聊天和问答
-5. 只是提到"图片"、"画"等词但不是在要求你生成
-6. 谈论已存在的图片或照片（仅讨论不修改）
-7. 技术讨论中提到绘图概念但无生成需求
-8. 用户明确表示不需要图片时
-9. 刚刚成功生成过图片，避免频繁请求
-10. 你主动想画图但用户没有要求——不要自作主张
-"""
-
-    keyword_case_sensitive = False
-
-    # 动作参数定义（简化版，提示词优化由独立模块处理）
-    action_parameters = {
-        "description": "从用户消息中提取的图片描述文本（例如：用户说'画一只小猫'，则填写'一只小猫'）。必填参数。",
-        "model_id": "要使用的模型ID（如model1、model2、model3等，默认使用default_model配置的模型）",
-        "strength": "图生图强度，0.1-1.0之间，值越高变化越大（仅图生图时使用，可选，默认0.7）",
-        "size": "图片尺寸，如512x512、1024x1024等（可选，不指定则使用模型默认尺寸）",
-        "selfie_mode": "是否启用自拍模式（true/false，可选，默认false）。启用后会自动添加自拍场景和手部动作",
-        "selfie_style": "自拍风格，可选值：standard（标准自拍，前置摄像头视角），mirror（对镜自拍，室内镜子场景），photo（第三人称照片，他人拍摄视角，自然姿态）。仅在selfie_mode=true时生效，可选，默认standard",
-        "free_hand_action": "自由手部动作描述（英文，可选）。当前仅作为额外构图提示透传给最终提示词优化器，不再由本组件直接决定自拍手势或构图",
-    }
-
-    # 动作使用场景
-    action_require = [
-        "当用户明确对你提出生成或修改图片请求时使用，不要频率太高",
-        "群聊中必须是用户@你或叫你名字要求画图才使用，不要响应发给其他机器人的命令（如/nai、/sd等）",
-        "自动检测是否有输入图片来决定文生图或图生图模式",
-        "重点：不要连续发，如果你在前10句内已经发送过[图片]或者[表情包]或记录出现过类似描述的[图片]，就不要选择此动作",
-        "支持指定模型：用户可以通过'用模型1画'、'model2生成'等方式指定特定模型",
-        "自拍模式选择：用户要求'自拍/拍个自拍'时用standard；要求'照镜子/对镜拍'时用mirror；要求'拍张照片/画一张你在XX的照片/第三人称'等非自拍视角时用photo",
-    ]
-    associated_types = ["text", "image"]
-
     def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
+        super().__init__()
         self.image_processor = ImageProcessor(self)
         self.cache_manager = CacheManager(self)
-        self._api_clients = {}  # 缓存不同格式的API客户端
+        self._api_clients = {}
 
     async def _optimize_generation_prompt(
         self,
@@ -204,25 +100,23 @@ class SelfiePainterAction(BaseAction):
             self._api_clients[api_format] = client_class(self)
         return self._api_clients[api_format]
 
-    async def execute(self) -> Tuple[bool, str]:
-        """执行统一图片生成动作"""
-        logger.info(f"{self.log_prefix} 执行统一图片生成动作")
-
-        # 懒启动自动自拍任务（如果插件初始化时事件循环未就绪）
+    async def handle_draw_picture(self, stream_id: str = "", **kwargs: Any) -> Tuple[bool, str]:
+        """Execute unified image generation action."""
+        action_data = kwargs.get("action_data") or kwargs
+        message = kwargs.get("message") or kwargs.get("action_message")
+        if not isinstance(action_data, dict):
+            action_data = {}
+        self._bind_action_context(stream_id, action_data, message)
+        logger.info("%s exec draw action", self.log_prefix)
         try:
-            from src.plugin_system.core.plugin_manager import plugin_manager  # pyright: ignore[reportMissingImports]
-
-            plugin_instance = plugin_manager.get_plugin_instance("selfie_painter_v2")
-            if plugin_instance:
-                startup_handler = getattr(plugin_instance, "try_start_auto_selfie", None)
-                if callable(startup_handler):
-                    startup_handler()
-        except (ImportError, AttributeError, RuntimeError) as exc:
-            logger.debug(f"{self.log_prefix} 自动自拍懒启动检查失败（将忽略）: {exc}")
-
-        # 检查是否是 /dr 命令消息，如果是则跳过（由 Command 组件处理）
-        if self.action_message and self.action_message.processed_plain_text:
-            message_text = self.action_message.processed_plain_text.strip()
+            startup_handler = getattr(self, "try_start_auto_selfie", None)
+            if callable(startup_handler):
+                startup_handler()
+        except (AttributeError, RuntimeError) as exc:
+            logger.debug("lazy start auto selfie skipped: %s", exc)
+        action_message = self._current_message
+        if action_message and getattr(action_message, "processed_plain_text", None):
+            message_text = self._current_message.processed_plain_text.strip()
             if message_text.startswith("/dr ") or message_text == "/dr":
                 logger.info(f"{self.log_prefix} 检测到 /dr 命令，跳过 Action 处理（由 Command 组件处理）")
                 return False, "跳过 /dr 命令"
@@ -234,14 +128,14 @@ class SelfiePainterAction(BaseAction):
             return False, "插件已禁用"
 
         # 获取参数
-        description = self.action_data.get("description", "").strip()
-        model_id = self.action_data.get("model_id", "").strip()
-        strength = self.action_data.get("strength", 0.7)
-        size = self.action_data.get("size", "").strip()
-        selfie_mode_raw = self.action_data.get("selfie_mode", False)
+        description = self._current_action_data.get("description", "").strip()
+        model_id = self._current_action_data.get("model_id", "").strip()
+        strength = self._current_action_data.get("strength", 0.7)
+        size = self._current_action_data.get("size", "").strip()
+        selfie_mode_raw = self._current_action_data.get("selfie_mode", False)
         selfie_mode = selfie_mode_raw in (True, "true", "True", 1, "1")
-        selfie_style_llm = self.action_data.get("selfie_style", "").strip().lower()
-        free_hand_action = self.action_data.get("free_hand_action", "").strip()
+        selfie_style_llm = self._current_action_data.get("selfie_style", "").strip().lower()
+        free_hand_action = self._current_action_data.get("free_hand_action", "").strip()
 
         # 自拍风格优先级：运行时命令设置 > LLM 指定 > 全局配置
         global_style = normalize_selfie_style(self.get_config("selfie.default_style", "standard"))
@@ -265,36 +159,36 @@ class SelfiePainterAction(BaseAction):
         actual_model_id, model_config = self._get_model_config(model_id)
         if not model_config:
             error_msg = f"指定的模型 '{model_id}' 不存在或配置无效，请检查配置文件。"
-            await self.send_text(error_msg)
+            await self.ctx.send.text(error_msg, self._current_stream_id)
             logger.error(f"{self.log_prefix} 模型配置获取失败: {model_id}")
             return False, "模型配置无效"
 
         # 回退后的实际模型必须参与启用检查及后续提示词、撤回处理。
         model_id = actual_model_id
         if not runtime_state.is_model_enabled(self._get_runtime_state_id(), model_id):
-            await self.send_text(f"模型 {model_id} 当前不可用")
+            await self.ctx.send.text(f"模型 {model_id} 当前不可用", self._current_stream_id)
             return False, f"模型 {model_id} 已禁用"
         actual_model_name = model_config.get("model", "")
 
         # 从 ChatStream 提取规范化的上下文 ID 用于访问控制检查
-        context_id = extract_context_id_from_chat_stream(self.chat_stream)
+        context_id = extract_context_id_from_chat_stream(self._get_current_chat_stream())
         if not context_id:
             # 提取失败时拒绝访问，不回退到不兼容的哈希格式
             logger.error(f"{self.log_prefix} 无法从聊天流提取规范化上下文 ID，拒绝访问")
-            await self.send_text("无法验证聊天流权限，请联系管理员")
+            await self.ctx.send.text("无法验证聊天流权限，请联系管理员", self._current_stream_id)
             return False, "context_id 提取失败"
 
         # 修复 F4：使用实际配置节 ID 进行权限检查（而非请求 ID）
         if not is_chat_allowed_for_model(self.get_config, context_id, actual_model_id):
             logger.warning(f"{self.log_prefix} 模型配置节 {actual_model_id} 被聊天流访问规则拒绝: {context_id}")
-            await self.send_text(f"模型 {model_id} 当前聊天流不可用")
+            await self.ctx.send.text(f"模型 {model_id} 当前聊天流不可用", self._current_stream_id)
             return False, f"模型 {actual_model_id} 被访问规则拒绝"
 
         if actual_model_name and not is_chat_allowed_for_model(self.get_config, context_id, actual_model_name):
             logger.warning(
                 f"{self.log_prefix} 实际模型 {actual_model_name}（配置节 {actual_model_id}）被聊天流访问规则拒绝: {context_id}"
             )
-            await self.send_text(f"模型 {model_id} 当前聊天流不可用")
+            await self.ctx.send.text(f"模型 {model_id} 当前聊天流不可用", self._current_stream_id)
             return False, f"实际模型 {actual_model_name} 被访问规则拒绝"
 
         # 参数验证和后备提取
@@ -306,7 +200,7 @@ class SelfiePainterAction(BaseAction):
                 logger.info(f"{self.log_prefix} 从消息中提取到图片描述: {description}")
             else:
                 logger.warning(f"{self.log_prefix} 图片描述为空，无法生成图片。")
-                await self.send_text("你需要告诉我想要画什么样的图片哦~ 比如说'画一只可爱的小猫'")
+                await self.ctx.send.text("你需要告诉我想要画什么样的图片哦~ 比如说'画一只可爱的小猫'", self._current_stream_id)
                 return False, "图片描述为空"
 
         # 清理和验证描述
@@ -330,7 +224,7 @@ class SelfiePainterAction(BaseAction):
             # 检查自拍功能是否启用
             selfie_enabled = self.get_config("selfie.enabled", True)
             if not selfie_enabled:
-                await self.send_text("自拍功能暂未启用~")
+                await self.ctx.send.text("自拍功能暂未启用~", self._current_stream_id)
                 return False, "自拍功能未启用"
 
             logger.info(f"{self.log_prefix} 启用自拍模式，风格: {selfie_style}")
@@ -406,7 +300,7 @@ class SelfiePainterAction(BaseAction):
             # 检查指定模型是否支持图生图
             if not model_config.get("support_img2img", True):
                 logger.warning(f"{self.log_prefix} 模型 {model_id} 不支持图生图，转为文生图模式")
-                await self.send_text(f"当前模型 {model_id} 不支持图生图功能，将为您生成新图片")
+                await self.ctx.send.text(f"当前模型 {model_id} 不支持图生图功能，将为您生成新图片", self._current_stream_id)
                 return await self._execute_unified_generation(
                     description,
                     model_id,
@@ -462,7 +356,7 @@ class SelfiePainterAction(BaseAction):
             actual_model_id, model_config = self._get_model_config(model_id)
             if not model_config:
                 error_msg = f"指定的模型 '{model_id}' 不存在或配置无效，请检查配置文件。"
-                await self.send_text(error_msg)
+                await self.ctx.send.text(error_msg, self._current_stream_id)
                 logger.error(f"{self.log_prefix} 模型配置获取失败: {model_id}")
                 return False, "模型配置无效"
 
@@ -474,14 +368,14 @@ class SelfiePainterAction(BaseAction):
         # 检查base_url
         if not http_base_url:
             error_msg = "抱歉，图片生成功能所需的HTTP配置（如API地址）不完整，无法提供服务。"
-            await self.send_text(error_msg)
+            await self.ctx.send.text(error_msg, self._current_stream_id)
             logger.error(f"{self.log_prefix} HTTP调用配置缺失: base_url.")
             return False, "HTTP配置不完整"
 
         # 检查api_key（comfyui格式允许为空）
         if api_format != "comfyui" and not http_api_key:
             error_msg = "抱歉，图片生成功能所需的HTTP配置（如API密钥）不完整，无法提供服务。"
-            await self.send_text(error_msg)
+            await self.ctx.send.text(error_msg, self._current_stream_id)
             logger.error(f"{self.log_prefix} HTTP调用配置缺失: api_key.")
             return False, "HTTP配置不完整"
 
@@ -492,7 +386,7 @@ class SelfiePainterAction(BaseAction):
             and ("YOUR_API_KEY_HERE" in http_api_key or "xxxxxxxxxxxxxx" in http_api_key)
         ):
             error_msg = "图片生成功能尚未配置，请设置正确的API密钥。"
-            await self.send_text(error_msg)
+            await self.ctx.send.text(error_msg, self._current_stream_id)
             logger.error(f"{self.log_prefix} API密钥未配置")
             return False, "API密钥未配置"
 
@@ -528,7 +422,7 @@ class SelfiePainterAction(BaseAction):
             except Exception as e:
                 # 图片解码失败时不应继续执行图生图流程
                 logger.error(f"{self.log_prefix} 输入图片解码失败，跳过图生图: {e}")
-                await self.send_text("输入图片格式错误，请重新上传")
+                await self.ctx.send.text("输入图片格式错误，请重新上传", self._current_stream_id)
                 return False, "图片解码失败"
 
         cached_result = await self.cache_manager.get_cached_result(
@@ -539,8 +433,8 @@ class SelfiePainterAction(BaseAction):
             logger.info(f"{self.log_prefix} 使用缓存的图片结果")
             enable_debug = self.get_config("components.enable_debug_info", False)
             if enable_debug:
-                await self.send_text("我之前画过类似的图片，用之前的结果~")
-            send_success = await self.send_image(cached_result)
+                await self.ctx.send.text("我之前画过类似的图片，用之前的结果~", self._current_stream_id)
+            send_success = await self.ctx.send.image(cached_result, self._current_stream_id)
             if send_success:
                 return True, "图片已发送(缓存)"
             else:
@@ -552,9 +446,9 @@ class SelfiePainterAction(BaseAction):
         enable_debug = self.get_config("components.enable_debug_info", False)
         if enable_debug:
             mode_text = "图生图" if is_img2img else "文生图"
-            await self.send_text(
+            await self.ctx.send.text(
                 f"收到！正在为您使用 {model_id or '默认'} 模型进行{mode_text}，描述: '{description}'，请稍候...（模型: {model_name}, 尺寸: {image_size}）"
-            )
+            , self._current_stream_id)
 
         try:
             # 对于 Gemini/Zai 格式，将原始 LLM 尺寸添加到 model_config 中
@@ -587,28 +481,28 @@ class SelfiePainterAction(BaseAction):
                 )
                 if resolved_ok:
                     send_timestamp = time_module.time()
-                    send_success = await self.send_image(resolved_data)
+                    send_success = await self.ctx.send.image(resolved_data, self._current_stream_id)
                     if send_success:
                         mode_text = "图生图" if is_img2img else "文生图"
                         if enable_debug:
-                            await self.send_text(f"{mode_text}完成！")
+                            await self.ctx.send.text(f"{mode_text}完成！", self._current_stream_id)
                         await self.cache_manager.cache_result(
                             description, model_name, image_size, strength, is_img2img, resolved_data, input_image_bytes
                         )
                         await self._schedule_auto_recall_for_recent_message(model_config, model_id, send_timestamp)
                         return True, f"{mode_text}已成功生成并发送"
                     else:
-                        await self.send_text("图片已处理完成，但发送失败了")
+                        await self.ctx.send.text("图片已处理完成，但发送失败了", self._current_stream_id)
                         return False, "图片发送失败"
                 else:
-                    await self.send_text(f"图片处理失败：{resolved_data}")
+                    await self.ctx.send.text(f"图片处理失败：{resolved_data}", self._current_stream_id)
                     return False, f"图片处理失败: {resolved_data}"
             else:
-                await self.send_text("图片生成API返回了无法处理的数据格式")
+                await self.ctx.send.text("图片生成API返回了无法处理的数据格式", self._current_stream_id)
                 return False, "API返回数据格式错误"
         else:
             mode_text = "图生图" if is_img2img else "文生图"
-            await self.send_text(f"哎呀，{mode_text}时遇到问题：{result}")
+            await self.ctx.send.text(f"哎呀，{mode_text}时遇到问题：{result}", self._current_stream_id)
             return False, f"{mode_text}失败: {result}"
 
     def _get_model_config(self, model_id: str | None = None) -> tuple[str, Dict[str, Any]]:
@@ -983,14 +877,14 @@ class SelfiePainterAction(BaseAction):
         Returns:
             str: 提取的图片描述，如果无法提取则返回空字符串
         """
-        if not self.action_message:
+        if not self._current_message:
             return ""
 
         # 获取消息文本
         message_text = (
-            self.action_message.processed_plain_text
-            or self.action_message.display_message
-            or getattr(self.action_message, "raw_message", "")
+            self._current_message.processed_plain_text
+            or self._current_message.display_message
+            or getattr(self._current_message, "raw_message", "")
             or ""
         ).strip()
 
