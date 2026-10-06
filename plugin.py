@@ -470,10 +470,16 @@ class SelfiePainterV2Plugin(MaiBotPlugin, PluginRuntimeMixin, ScheduleInjectMixi
             logger.error("[SelfiePainterV2] 停止后台任务失败: %s", exc, exc_info=True)
         logger.info("selfie_painter_v2 已卸载")
 
-    async def on_config_update(self, new_config: dict, version: str) -> None:
-        """配置更新回调。"""
+    async def on_config_update(self, scope: str, config_data: dict, version: str) -> None:
+        """配置更新回调。
+
+        Args:
+            scope: 配置变更范围，取值为 self（插件自身）、bot、model。
+            config_data: 当前范围对应的最新配置数据。
+            version: 配置版本号。
+        """
         await self._reload_config()
-        logger.info("selfie_painter_v2 配置已更新: version=%s", version)
+        logger.info("selfie_painter_v2 配置已更新: scope=%s version=%s", scope, version)
 
     # ── EventHandler：日程上下文与注入 ──────────────────────
     @EventHandler(
