@@ -11,6 +11,7 @@ logger = logging.getLogger(__name__)
 
 from .api_clients import ApiClient
 from .utils import (
+    SEND_IMAGE_RPC_TIMEOUT_MS,
     ImageProcessor,
     RoleReferenceStore,
     runtime_state,
@@ -330,7 +331,9 @@ class PicGenerationCommand(PicCommandMixin):
                 )
                 if resolved_ok:
                     send_timestamp = time_module.time()
-                    send_success = await self.ctx.send.image(resolved_data, self._current_stream_id)
+                    send_success = await self.ctx.send.image(
+                        resolved_data, self._current_stream_id, rpc_timeout_ms=SEND_IMAGE_RPC_TIMEOUT_MS
+                    )
                     if send_success:
                         if enable_debug:
                             await self.ctx.send.text(f"{style_name} 风格转换完成！", self._current_stream_id)
@@ -463,7 +466,9 @@ class PicGenerationCommand(PicCommandMixin):
                 )
                 if resolved_ok:
                     send_timestamp = time_module.time()
-                    send_success = await self.ctx.send.image(resolved_data, self._current_stream_id)
+                    send_success = await self.ctx.send.image(
+                        resolved_data, self._current_stream_id, rpc_timeout_ms=SEND_IMAGE_RPC_TIMEOUT_MS
+                    )
                     if send_success:
                         if enable_debug:
                             await self.ctx.send.text(f"{mode_text}完成！", self._current_stream_id)

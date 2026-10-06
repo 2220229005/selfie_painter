@@ -8,6 +8,7 @@ from typing import Tuple, Optional, Dict, Any
 
 from .api_clients import get_client_class
 from .utils import (
+    SEND_IMAGE_RPC_TIMEOUT_MS,
     ImageProcessor,
     CacheManager,
     validate_image_size,
@@ -470,7 +471,9 @@ class SelfiePainterActionMixin:
             enable_debug = self.get_config("components.enable_debug_info", False)
             if enable_debug:
                 await self.ctx.send.text("我之前画过类似的图片，用之前的结果~", self._current_stream_id)
-            send_success = await self.ctx.send.image(cached_result, self._current_stream_id)
+            send_success = await self.ctx.send.image(
+                cached_result, self._current_stream_id, rpc_timeout_ms=SEND_IMAGE_RPC_TIMEOUT_MS
+            )
             if send_success:
                 return True, "图片已发送(缓存)"
             else:
@@ -517,7 +520,9 @@ class SelfiePainterActionMixin:
                 )
                 if resolved_ok:
                     send_timestamp = time_module.time()
-                    send_success = await self.ctx.send.image(resolved_data, self._current_stream_id)
+                    send_success = await self.ctx.send.image(
+                        resolved_data, self._current_stream_id, rpc_timeout_ms=SEND_IMAGE_RPC_TIMEOUT_MS
+                    )
                     if send_success:
                         mode_text = "图生图" if is_img2img else "文生图"
                         if enable_debug:

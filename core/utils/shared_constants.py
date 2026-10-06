@@ -4,6 +4,12 @@
 # JPEG: /9j/  PNG: iVBORw  WEBP: UklGR  GIF: R0lGOD
 BASE64_IMAGE_PREFIXES = ("iVBORw", "/9j/", "UklGR", "R0lGOD")
 
+# 发送图片时的 RPC 超时（毫秒）。
+# 超大 Base64 图片上传 + QQ 协议端发送可能超过宿主默认的 30s，
+# 这里放宽到 120s，避免 draw_picture / /dr 命令在“发送图片”阶段误报 E_TIMEOUT。
+# 该值会作为 rpc_timeout_ms 透传给宿主 cap.call。
+SEND_IMAGE_RPC_TIMEOUT_MS = 120000
+
 # 自拍通用手部质量负面提示词（所有自拍风格共用）
 # 只保留最常用、最有效的 SD 标签，避免重复堆叠。
 SELFIE_HAND_NEGATIVE = "bad hands, extra digits, fewer digits, extra arms, bad anatomy"
