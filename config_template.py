@@ -2,6 +2,7 @@
 """config_template: generate commented config.toml for selfie_painter."""
 from __future__ import annotations
 import logging
+import os
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, Mapping
@@ -100,6 +101,17 @@ def _nget(config, dotted):
     return dict(cur) if isinstance(cur, Mapping) else {}
 
 
+def _is_valid_toml(text):
+    """校验文本是否为合法 TOML；用于识别被截断/损坏的配置文件。"""
+    try:
+        import tomllib
+
+        tomllib.loads(text)
+        return True
+    except Exception:
+        return False
+
+
 def render_commented_config(config, schema):
     NL = chr(10)
     lines = []
@@ -148,20 +160,62 @@ def render_commented_config(config, schema):
 
 
 def ensure_commented_config(plugin_dir, config_data, schema):
+    """若 config.toml 缺少注释，则用带注释版本重写。
+
+    安全性说明：
+        1. 已有本模块标记（_COMMENT_MARKER）时直接跳过，避免覆盖用户配置。
+        2. 采用「临时文件 + os.replace」原子写入，杜绝写到一半（例如
+           被外部编辑器/宿主并发写入打断）而产生半截损坏文件。
+        3. 写入前先校验渲染结果可被 tomllib 解析，避免产出非法 TOML。
+
+    Args:
+        plugin_dir: 插件根目录。
+        config_data: 当前配置数据（用于填充取值）。
+        schema: 用于取注释的 CONFIG_SCHEMA。
+
+    Returns:
+        bool: 是否实际写入（True 表示已重写）。
+    """
+    NL = chr(10)
     cfg_path = Path(plugin_dir) / CONFIG_FILE_NAME
+    tmp_path = cfg_path.with_name(cfg_path.name + ".tmp")
     try:
         if cfg_path.exists():
             existing = cfg_path.read_text(encoding="utf-8")
             if _COMMENT_MARKER in existing:
-                return False
+                # 有标记也要校验完整性：外部编辑器/并发写入可能把文件截断，
+                # 此时必须重建，否则宿主会一直报“读取插件配置失败”。
+                if _is_valid_toml(existing):
+                    return False
+                logger.warning(
+                    "[SelfiePainterV2] 检测到 config.toml 已损坏（无法解析），将重新生成带注释版本"
+                )
         if not schema:
             return False
         text = render_commented_config(config_data, schema)
+        # 写入前自检：确保渲染结果确实是合法 TOML，避免污染用户的配置文件
+        try:
+            import tomllib
+
+            tomllib.loads(text)
+        except Exception as exc:
+            logger.warning("[SelfiePainterV2] 渲染结果非法，已跳过写入: %s", exc)
+            return False
         cfg_path.parent.mkdir(parents=True, exist_ok=True)
-        cfg_path.write_text(text, encoding="utf-8")
+        # 原子写入：先写临时文件，fsync 后再 replace，避免出现半截文件
+        with open(tmp_path, "w", encoding="utf-8") as handle:
+            handle.write(text)
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.replace(tmp_path, cfg_path)
         logger.info("[SelfiePainterV2] 已生成带注释的 config.toml（%d 行）", text.count(NL))
         return True
     except Exception as exc:
         logger.warning("[SelfiePainterV2] 生成带注释配置失败: %s", exc)
+        try:
+            if tmp_path.exists():
+                tmp_path.unlink()
+        except Exception:
+            pass
         return False
 
