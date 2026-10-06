@@ -4,6 +4,7 @@
 # pyright: reportMissingTypeArgument=false
 
 import logging
+from pathlib import Path
 from typing import List, Tuple, Type, Dict, Any
 
 from maibot_sdk import MaiBotPlugin
@@ -28,6 +29,7 @@ from .plugin_meta import (
 )
 from .plugin_schema import CONFIG_LAYOUT, CONFIG_SCHEMA, CONFIG_SECTION_DESCRIPTIONS, MODEL_FIELD_TEMPLATE
 from .plugin_config_model import SelfiePainterConfig
+from .config_template import ensure_commented_config
 from .core.utils.cache_manager import CacheManager
 from .plugin_runtime import PluginRuntimeMixin
 from .core.schedule_inject_handler import ScheduleInjectMixin
@@ -442,6 +444,15 @@ class SelfiePainterV2Plugin(MaiBotPlugin, PluginRuntimeMixin, ScheduleInjectMixi
     async def on_load(self) -> None:
         """插件加载回调：预读配置并注入 WEBUI 动态布局。"""
         await self._reload_config()
+        # 补齐带中文注释的 config.toml（宿主首次生成时无注释）
+        try:
+            ensure_commented_config(
+                Path(__file__).resolve().parent,
+                self._config_bridge.raw,
+                CONFIG_SCHEMA,
+            )
+        except Exception as exc:
+            logger.warning("[SelfiePainterV2] 生成带注释配置失败: %s", exc)
         self._inject_dynamic_config_layout(self._config_bridge.raw)
         try:
             self._bootstrap_runtime_tasks()
