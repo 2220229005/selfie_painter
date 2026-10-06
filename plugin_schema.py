@@ -126,7 +126,7 @@ CONFIG_SCHEMA = {
         ),
         "enabled": ConfigField(
             type=bool,
-            default=False,
+            default=True,
             description="是否启用插件。开启后麦麦可以画画，关闭则所有画图功能都不可用",
             label="启用插件",
             order=3,

@@ -13,7 +13,7 @@ class Sec_plugin(PluginConfigBase):
 
     name: str = Field(default='画家麦麦的自拍日常', description='画家麦麦的自拍日常 — 智能多模型图片生成插件，支持文生图/图生图自动识别', json_schema_extra={'label': '插件名称', 'disabled': True, 'order': 1, 'rows': 3})
     config_version: str = Field(default='3.6.11', description='插件配置版本号', json_schema_extra={'label': '配置版本', 'disabled': True, 'order': 2, 'rows': 3})
-    enabled: bool = Field(default=False, description='是否启用插件。开启后麦麦可以画画，关闭则所有画图功能都不可用', json_schema_extra={'label': '启用插件', 'order': 3, 'rows': 3})
+    enabled: bool = Field(default=True, description='是否启用插件。开启后麦麦可以画画，关闭则所有画图功能都不可用', json_schema_extra={'label': '启用插件', 'order': 3, 'rows': 3})
 
 
 class Sec_generation(PluginConfigBase):
