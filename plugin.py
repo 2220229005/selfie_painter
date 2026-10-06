@@ -43,6 +43,12 @@ from .core._draw_action_meta import (
     DRAW_PICTURE_ASSOCIATED_TYPES,
 )
 
+
+# 生图相关组件的 RPC 超时（毫秒）。
+# 魔搭等异步生图 API 出图可能需 100~170s，而宿主默认组件超时为 60s，
+# 这里在组件级声明显式超时以覆盖默认值，避免 draw_picture / /dr 命令误报 E_TIMEOUT。
+GENERATION_COMPONENT_TIMEOUT_MS = 300000
+
 logger = logging.getLogger("selfie_painter_v2")
 
 
@@ -501,6 +507,7 @@ class SelfiePainterV2Plugin(MaiBotPlugin, PluginRuntimeMixin, ScheduleInjectMixi
         "pic_generation_command",
         description="图生图命令，使用风格化提示词：/dr <风格> 或自然语言：/dr <描述>",
         pattern=r"(?:.*，说：\s*)?/dr\s+(?!list\b|models\b|config\b|set\b|reset\b|on\b|off\b|model\b|recall\b|default\b|refresh\b|clear\b|status\b|styles\b|style\b|help\b|selfie\b|wardrobe\b|衣柜\b)(?P<content>.+)$",
+        timeout_ms=GENERATION_COMPONENT_TIMEOUT_MS,
     )
     async def handle_pic_generation_command(self, stream_id: str = "", user_id: str = "", matched_groups: dict | None = None, message: Any = None, **kwargs: Any):
         return await self.handle_pic_generation(stream_id=stream_id, user_id=user_id, matched_groups=matched_groups, message=message, **kwargs)
@@ -533,6 +540,9 @@ class SelfiePainterV2Plugin(MaiBotPlugin, PluginRuntimeMixin, ScheduleInjectMixi
         action_require=DRAW_PICTURE_ACTION_REQUIRE,
         associated_types=DRAW_PICTURE_ASSOCIATED_TYPES,
         parallel_action=True,
+        # 魔搭等异步生图 API 出图可能需 100~170s，超过宿主默认 60s 会触发 E_TIMEOUT，
+        # 这里显式声明组件级超时，覆盖宿主默认值。
+        timeout_ms=GENERATION_COMPONENT_TIMEOUT_MS,
     )
     async def handle_draw_picture_action(self, stream_id: str = "", **kwargs: Any):
         return await self.handle_draw_picture(stream_id=stream_id, **kwargs)
