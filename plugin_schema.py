@@ -122,7 +122,7 @@ CONFIG_SCHEMA = {
             order=1,
         ),
         "config_version": ConfigField(
-            type=str, default="3.6.11", description="插件配置版本号", label="配置版本", disabled=True, order=2
+            type=str, default="3.6.13", description="插件配置版本号", label="配置版本", disabled=True, order=2
         ),
         "enabled": ConfigField(
             type=bool,
