@@ -580,8 +580,8 @@ CONFIG_SCHEMA = {
         ),
         "model_id": ConfigField(
             type=str,
-            default="planner",
-            description="日程生成使用的麦麦 LLM 模型。可用值：utils（组件模型）、tool_use（工具调用模型）、replyer（首要回复模型）、planner（决策模型，推荐）、vlm（图像识别模型）",
+            default="replyer",
+            description="日程生成使用的麦麦 LLM 模型。可用值：utils（组件模型）、tool_use（工具调用模型）、replyer（首要回复模型，推荐）、planner（决策模型）、vlm（图像识别模型）",
             label="日程模型",
             placeholder="planner",
             order=3,

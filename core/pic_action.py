@@ -403,7 +403,7 @@ class SelfiePainterActionMixin:
         api_format = model_config.get("format", "openai")
 
         # 检查base_url
-        if not http_base_url:
+        if not http_base_url or "YOUR_API_BASE_URL" in str(http_base_url):
             error_msg = "抱歉，图片生成功能所需的HTTP配置（如API地址）不完整，无法提供服务。"
             await self.ctx.send.text(error_msg, self._current_stream_id)
             logger.error(f"{self.log_prefix} HTTP调用配置缺失: base_url.")
@@ -420,7 +420,11 @@ class SelfiePainterActionMixin:
         if (
             api_format != "comfyui"
             and isinstance(http_api_key, str)
-            and ("YOUR_API_KEY_HERE" in http_api_key or "xxxxxxxxxxxxxx" in http_api_key)
+            and (
+                "YOUR_API_KEY" in http_api_key
+                or "YOUR_MODELSCOPE_TOKEN" in http_api_key
+                or "xxxxxxxxxxxxxx" in http_api_key
+            )
         ):
             error_msg = "图片生成功能尚未配置，请设置正确的API密钥。"
             await self.ctx.send.text(error_msg, self._current_stream_id)
