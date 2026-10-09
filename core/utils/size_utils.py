@@ -49,29 +49,12 @@ async def select_size_with_llm(description: str, log_prefix: str = "") -> Option
         return None
 
     try:
-        from maibot_sdk.compat.apis import llm_api
-
-        # 获取可用模型
-        models = llm_api.get_available_models()
-        if not models:
-            logger.warning(f"{log_prefix} 没有可用的 LLM 模型，无法选择尺寸")
-            return None
-
-        # 使用 replyer 模型（首要回复模型）
-        if "replyer" not in models:
-            logger.warning(f"{log_prefix} 没有找到 replyer 模型，无法选择尺寸")
-            return None
-        model_config = models["replyer"]
-
-        # 构建 prompt
+        from ..utils.llm_compat import call_llm_generate
         full_prompt = f"{SIZE_SELECTOR_SYSTEM_PROMPT}\nInput: {description.strip()}\nOutput:"
-
         logger.info(f"{log_prefix} 使用 LLM 选择尺寸...")
-
-        # 调用 LLM（不传递 temperature 和 max_tokens，使用模型默认值）
-        success, response, reasoning, model_name = await llm_api.generate_with_model(
+        success, response, reasoning, model_name = await call_llm_generate(
             prompt=full_prompt,
-            model_config=model_config,
+            model_id="replyer",
             request_type="plugin.size_select",
         )
 

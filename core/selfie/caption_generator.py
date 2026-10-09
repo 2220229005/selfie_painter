@@ -84,16 +84,10 @@ async def generate_caption(
     try:
         prompt = _build_caption_prompt(activity_info, personality, reply_style)
 
-        models = llm_api.get_available_models()
-        model = models.get(model_id)
-        if not model:
-            # 指定模型不存在时直接失败，禁止静默回退到另一个模型
-            logger.error(f"未找到模型 {model_id}，配文生成失败")
-            return ""
-
-        success, caption, _, _ = await llm_api.generate_with_model(
+        from ..utils.llm_compat import call_llm_generate
+        success, caption, _, _ = await call_llm_generate(
             prompt=prompt,
-            model_config=model,
+            model_id=model_id,
             request_type="plugin.auto_selfie_caption",
             temperature=0.85,
             max_tokens=8192,

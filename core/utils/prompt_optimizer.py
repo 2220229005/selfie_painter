@@ -189,21 +189,11 @@ class PromptOptimizer:
         self._model_config = None
 
     def _get_model_config(self):
-        """获取可用的 MaiBot LLM 模型配置"""
-        if self._model_config is None:
-            try:
-                models = llm_api.get_available_models()
-                # 使用 replyer 模型（首要回复模型）
-                if "replyer" in models:
-                    self._model_config = models["replyer"]
-                else:
-                    logger.warning(f"{self.log_prefix} 没有找到 replyer 模型")
-                    return None
-            except Exception as e:
-                logger.error(f"{self.log_prefix} 获取模型配置失败: {e}")
-                return None
-        return self._model_config
-
+        """获取可用的 MaiBot LLM 模型配置（已弃用，保留接口兼容）"""
+        # SDK 兼容层 get_available_models 已弃用，返回空 dict。
+        # 提示词优化器使用自定义 API 或 replyer 默认模型，
+        # 这里直接返回 None 让调用方走自定义 API 路径。
+        return None
     @staticmethod
     def _has_custom_api(
         custom_api_base_url: str,

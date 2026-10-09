@@ -183,29 +183,20 @@ async def _generate_once(
         tuple: (日程项列表, 警告列表)
     """
     try:
-        llm_api = importlib.import_module("maibot_sdk.compat.apis.llm_api")
+        from ..utils.llm_compat import call_llm_generate
     except Exception:
-        logger.warning("[ScheduleLLM] 无法导入 llm_api")
-        return [], ["无法导入 llm_api"]
-
+        logger.warning("[ScheduleLLM] 无法导入 llm_compat")
+        return [], ["无法导入 llm_compat"]
     try:
-        models = llm_api.get_available_models()
-        model_config = models.get(model_id) or models.get("replyer")
-        if model_config is None:
-            logger.warning("[ScheduleLLM] 未找到可用 LLM 模型: %s", model_id)
-            return [], [f"未找到可用模型: {model_id}"]
-
-        success, content, _, _ = await llm_api.generate_with_model(
+        success, content, _, _ = await call_llm_generate(
             prompt=prompt,
-            model_config=model_config,
+            model_id=model_id,
             request_type="plugin.selfie_schedule_gen",
             temperature=0.7,
             max_tokens=8192,
         )
-
         if not success or not content:
             return [], ["LLM 生成失败"]
-
         items, warnings = _parse_items(content, target_date)
         return items, warnings
 

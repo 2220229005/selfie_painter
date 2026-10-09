@@ -148,22 +148,13 @@ async def generate_scene_with_llm(
         包含 action, environment, expression, lighting 的字典，失败返回 None
     """
     try:
-        from maibot_sdk.compat.apis import llm_api
-
-        models = llm_api.get_available_models()
-        model = models.get(model_id)
-        if not model:
-            # 指定模型不存在时直接失败，禁止静默回退到其它模型（如把 planner 偷偷换成 replyer）
-            logger.error(f"未找到模型 {model_id}，LLM 场景生成失败")
-            return None
-
+        from ..utils.llm_compat import call_llm_generate
         system_prompt = _build_scene_llm_prompt(selfie_style)
-        prompt = f"{system_prompt}\n\nActivity: {activity_info.description}"
-
-        success, response, _, model_name = await llm_api.generate_with_model(
+        prompt = f"{system_prompt}\n\nActivity: {description}"
+        success, response, _, model_name = await call_llm_generate(
             prompt=prompt,
-            model_config=model,
-            request_type="plugin.auto_selfie_scene",
+            model_id=model_id,
+            request_type="plugin.selfie_hand_action",
             temperature=0.7,
             max_tokens=8192,
         )
@@ -228,21 +219,12 @@ async def generate_hand_action_with_llm(
         英文手部动作标签字符串，失败返回 None
     """
     try:
-        from maibot_sdk.compat.apis import llm_api
-
-        models = llm_api.get_available_models()
-        model = models.get(model_id)
-        if not model:
-            # 指定模型不存在时直接失败，禁止静默回退到其它模型
-            logger.error(f"未找到模型 {model_id}，手部动作生成失败")
-            return None
-
+        from ..utils.llm_compat import call_llm_generate
         system_prompt = _build_scene_llm_prompt(selfie_style)
         prompt = f"{system_prompt}\n\nActivity: {description}"
-
-        success, response, _, model_name = await llm_api.generate_with_model(
+        success, response, _, model_name = await call_llm_generate(
             prompt=prompt,
-            model_config=model,
+            model_id=model_id,
             request_type="plugin.selfie_hand_action",
             temperature=0.7,
             max_tokens=8192,
