@@ -1084,8 +1084,8 @@ CONFIG_SCHEMA = {
         ),
         "base_url": ConfigField(
             type=str,
-            default="https://api-inference.modelscope.cn/v1",
-            description="API服务地址",
+            default="http://YOUR_API_BASE_URL/v1",
+            description="API服务地址（中转站/自建服务的 /v1 端点）",
             label="API地址",
             required=True,
             group="connection",
@@ -1093,7 +1093,7 @@ CONFIG_SCHEMA = {
         ),
         "api_key": ConfigField(
             type=str,
-            default="Bearer YOUR_MODELSCOPE_TOKEN",
+            default="Bearer YOUR_API_KEY",
             description="API密钥，格式：Bearer xxx",
             label="API密钥",
             input_type="text",
@@ -1259,7 +1259,7 @@ CONFIG_SCHEMA = {
     "models.model3": {
         "name": ConfigField(
             type=str,
-            default="cancel13/liaocao",
+            default="GPT-Image-2（Chat接口）",
             description="模型显示名称",
             label="模型名称",
             group="connection",
@@ -1267,8 +1267,8 @@ CONFIG_SCHEMA = {
         ),
         "base_url": ConfigField(
             type=str,
-            default="https://api-inference.modelscope.cn/v1",
-            description="API服务地址",
+            default="http://YOUR_API_BASE_URL/v1",
+            description="API服务地址（中转站/自建服务的 /v1 端点）",
             label="API地址",
             required=True,
             group="connection",
@@ -1276,7 +1276,7 @@ CONFIG_SCHEMA = {
         ),
         "api_key": ConfigField(
             type=str,
-            default="Bearer YOUR_MODELSCOPE_TOKEN",
+            default="Bearer YOUR_API_KEY",
             description="API密钥，格式：Bearer xxx",
             label="API密钥",
             input_type="text",
@@ -1286,7 +1286,7 @@ CONFIG_SCHEMA = {
         ),
         "format": ConfigField(
             type=str,
-            default="openai",
+            default="openai-chat",
             description="API格式",
             label="API格式",
             choices=[
@@ -1307,7 +1307,7 @@ CONFIG_SCHEMA = {
         ),
         "model": ConfigField(
             type=str,
-            default="cancel13/liaocao",
+            default="gpt-image-2",
             description="模型标识",
             label="模型标识",
             required=True,
@@ -1837,17 +1837,17 @@ _DEFAULT_MODEL_VALUES = {
         "sampler": "Euler",
     },
     "models.model3": {
-        "name": "WAI-illustrious-SDXL-v17",
-        "model": "HingXuan/WAI-illustrious-SDXL-v17",
-        "format": "modelscope",
-        "fixed_size_enabled": True,
+        "name": "GPT-Image-2（Chat接口）",
+        "model": "gpt-image-2",
+        "format": "openai-chat",
+        "fixed_size_enabled": False,
         "default_size": "1024x1024",
-        "guidance_scale": 6,
-        "num_inference_steps": 30,
-        "custom_prompt_add": "masterpiece, best quality, newest, highres, aesthetic, ",
-        "negative_prompt_add": "worst quality, low quality, bad hands, mutated hands, blurry, lowres",
-        "optimizer_mode_override": "sd",
-        "sampler": "Euler a",
+        "guidance_scale": 7.5,
+        "num_inference_steps": 20,
+        "custom_prompt_add": "",
+        "negative_prompt_add": "",
+        "optimizer_mode_override": "natural_language",
+        "sampler": "Euler",
     },
     "models.model4": {
         "name": "ChenkinNoob-XL-V0.5",

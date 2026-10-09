@@ -14,14 +14,14 @@ _FILE_HEADER = '''# ============================================================
 #
 # 画家麦麦的自拍日常（麦麦绘卷）- 智能多模型图片生成插件
 # 支持文生图 / 图生图自动识别，兼容 OpenAI、魔搭（ModelScope）、
-# 硅基流动（SiliconFlow）、豆包、Gemini、ComfyUI 等多种 API 格式。
+# 硅基流动（SiliconFlow）、GPT-Image-2（Chat接口）、豆包、Gemini、ComfyUI 等多种 API 格式。
 #
 # 使用提醒：
 #   1. 模型配置在文件末尾的 [models.modelN] 段，按需添加 / 修改。
 #   2. 每个模型段必须包含 base_url、api_key、format、model 四个字段。
 #   3. format 可选值：
 #        openai         - 通用 OpenAI 兼容格式（硅基流动 / NewAPI / 多数中转站）
-#        openai-chat    - 通过 chat/completions 生图的服务
+#        openai-chat    - 通过 chat/completions 生图（GPT-Image-2 / grok2api 等）
 #        modelscope     - 魔搭（ModelScope）异步生图
 #        doubao         - 豆包（火山方舟）
 #        gemini         - Google Gemini
@@ -40,14 +40,6 @@ _EXTRA_NOTES = {
     'style_aliases': '风格的中文别名映射。添加更多别名请直接编辑本段。',
     'models': '插件支持多模型。添加更多模型：复制任一 [models.modelN] 整节，把 N 改成没用过的编号（如 model4、model5），然后填入对应参数即可。',
 }
-_CONDITIONAL_HINTS = {
-    'artist': '（仅砂糖云格式生效）',
-    'cfg': '（仅砂糖云格式生效）',
-    'sampler': '（仅砂糖云格式生效）',
-    'nocache': '（仅砂糖云格式生效）',
-    'noise_schedule': '（仅砂糖云格式生效）',
-}
-
 def _fmt(v):
     if isinstance(v, bool):
         return "true" if v else "false"
