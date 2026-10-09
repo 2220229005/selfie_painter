@@ -170,7 +170,15 @@ class SelfiePainterActionMixin:
         strength = self._current_action_data.get("strength", 0.7)
         size = self._current_action_data.get("size", "").strip()
         selfie_mode_raw = self._current_action_data.get("selfie_mode", False)
-        selfie_mode = selfie_mode_raw in (True, "true", "True", 1, "1")
+        # 兼容 LLM 传入的多种 truthy 值：布尔、数字、字符串
+        if isinstance(selfie_mode_raw, bool):
+            selfie_mode = selfie_mode_raw
+        elif isinstance(selfie_mode_raw, (int, float)):
+            selfie_mode = selfie_mode_raw != 0
+        elif isinstance(selfie_mode_raw, str):
+            selfie_mode = selfie_mode_raw.lower() in ("true", "1", "selfie", "自拍", "yes", "on")
+        else:
+            selfie_mode = False
         selfie_style_llm = self._current_action_data.get("selfie_style", "").strip().lower()
         free_hand_action = self._current_action_data.get("free_hand_action", "").strip()
 
