@@ -145,8 +145,7 @@ def render_commented_config(config, schema):
                 dv = _dflt(fi, "")
                 val = vals.get(fname, dv)
                 if d:
-                    hint = _CONDITIONAL_HINTS.get(fname, "")
-                    for rl in (d + hint).split(NL):
+                    for rl in d.split(NL):
                         lines.append("# " + rl)
                 lines.append(fname + " = " + _fmt(val))
                 lines.append("")
